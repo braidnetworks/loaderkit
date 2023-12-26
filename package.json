@@ -1,0 +1,24 @@
+{
+	"name": "@braidai/loaderkit",
+	"private": true,
+	"type": "module",
+	"version": "1.0.0",
+	"scripts": {
+		"lint": "eslint --max-warnings=0 --report-unused-disable-directives .",
+		"prepare": "npx tsc -b"
+	},
+	"devDependencies": {
+		"@braidai/eslintrc": "^1.0.0",
+		"@types/eslint": "^8.56.0",
+		"@types/node": "^20.10.5",
+		"eslint": "^8.56.0",
+		"typescript": "^5.3.3"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/braidnetworks/loaderkit.git"
+	},
+	"author": "https://github.com/braidnetworks/",
+	"license": "ISC",
+	"homepage": "https://github.com/braidnetworks/loaderkit#readme"
+}

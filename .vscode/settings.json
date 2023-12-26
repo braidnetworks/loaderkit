@@ -1,0 +1,12 @@
+{
+	"editor.tabSize": 4,
+	"eslint.experimental.useFlatConfig": true,
+	"files.exclude": {
+		".pnpm": true,
+		"**/dist": true,
+		"**/node_modules": true,
+		"pnpm-lock.yaml": true,
+	},
+	"files.insertFinalNewline": true,
+	"files.trimTrailingWhitespace": true,
+}

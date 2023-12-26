@@ -1,0 +1,26 @@
+{
+	"compilerOptions": {
+		// Language & emit settings
+		"checkJs": true,
+		"composite": true,
+		"declarationMap": true,
+		"isolatedModules": true,
+		"module": "nodenext",
+		"sourceMap": true,
+		"stripInternal": true,
+		"target": "es2022",
+		"verbatimModuleSyntax": true,
+
+		// Types / strictness
+		"exactOptionalPropertyTypes": true,
+		"noImplicitOverride": true,
+		"noUncheckedIndexedAccess": true,
+		"skipLibCheck": true,
+		"strict": true,
+	},
+	"include": [],
+	"exclude": [ "**/dist", "**/node_modules" ],
+	"references": [
+		{ "path": "./packages/ts" },
+	],
+}
