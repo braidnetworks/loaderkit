@@ -1,8 +1,11 @@
 import type { BuildFailure } from "esbuild";
 import type { LoadHook, ResolveHook } from "node:module";
+import { Buffer } from "node:buffer";
 import * as fs from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { parse as babelParse, types as t } from "@babel/core";
+import babelGen from "@babel/generator";
 import { transform } from "esbuild";
 import nodeResolve from "resolve";
 import { splitURLAndQuery, withNodeCallback } from "./utility.js";
@@ -233,7 +236,7 @@ export const load: LoadHook = async (urlString, context, nextLoad) => {
 				loader: location.endsWith("x") ? "tsx" : "ts",
 				target: nodeVersion,
 				sourcefile: locationPath,
-				sourcemap: "inline",
+				sourcemap: "external",
 				tsconfigRaw: {
 					compilerOptions: {
 						jsx: compilerOptions.jsx,
@@ -243,22 +246,60 @@ export const load: LoadHook = async (urlString, context, nextLoad) => {
 				},
 			});
 
-			// Return compiled result. Use output path for `responseURL` which is observable by
-			// `import.meta.url`.
-			const responseURL = outputLocation === undefined ? urlString : String(pathToFileURL(outputLocation)) + query;
+			// Attach the correct `import.meta.url`. The `includes` operation will catch instances
+			// like `import. meta` since this was just run through esbuild.
+			if (result.code.includes("import.meta")) {
+				const responseURL = outputLocation === undefined ? urlString : String(pathToFileURL(outputLocation)) + query;
+				const ast = babelParse(result.code, {
+					babelrc: false,
+					configFile: false,
+					filename: locationPath,
+					retainLines: true,
+					sourceType: "module",
+				})!;
+				ast.program.body.unshift(
+					t.expressionStatement(
+						t.assignmentExpression(
+							"=",
+							t.memberExpression(
+								t.metaProperty(t.identifier("import"), t.identifier("meta")),
+								t.identifier("url"),
+							),
+							t.stringLiteral(responseURL)),
+					));
+				const withMeta = babelGen.default(ast, {
+					retainLines: true,
+					sourceMaps: true,
+					// @ts-expect-error -- The types of this property are still wrong in 2024
+					inputSourceMap: result.map,
+				});
+				result.code = withMeta.code;
+				result.map = JSON.stringify(withMeta.map);
+			}
+
+			// Attach encoded source map
+			const responsePayload = `${result.code}\n//# sourceMappingURL=data:application/json;base64,${Buffer.from(result.map).toString("base64")}`;
 			return {
 				format,
-				responseURL,
 				shortCircuit: true,
-				source: result.code,
+				source: responsePayload,
 			};
 		} catch (error: any) {
-			const buildError: BuildFailure = error;
-			const message = buildError.errors[0]!;
-			const location = message.location === null ? "" : `:${message.location.line}:${message.location.column}`;
-			const previousStack = error.stack.slice(error.stack.indexOf("\n    at"));
-			const stack = `SyntaxError: ${message.text}\n    at (${urlString}${location})${previousStack}`;
-			throw Object.assign(new SyntaxError(message.text), { stack });
+			if (error.errors) {
+				const buildError: BuildFailure = error;
+				const message = buildError.errors[0]!;
+				const location = message.location === null ? "" : `:${message.location.line}:${message.location.column}`;
+				const previousStack = error.stack.slice(error.stack.indexOf("\n    at"));
+				const stack = `SyntaxError: ${message.text}\n    at (${urlString}${location})${previousStack}`;
+				throw Object.assign(new SyntaxError(message.text), { stack });
+			} else {
+				// Greppable. It means babel failed to parse/process the response from esbuild
+				throw Object.assign(new SyntaxError(error.message), {
+					note: "this happened in the loader",
+					stack: error.stack,
+					urlString,
+				});
+			}
 		}
 	}
 	return nextLoad(urlString, context);
