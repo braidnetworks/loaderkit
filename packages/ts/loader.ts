@@ -256,6 +256,12 @@ export const load: LoadHook = async (urlString, context, nextLoad) => {
 					filename: locationPath,
 					retainLines: true,
 					sourceType: "module",
+					parserOpts: {
+						plugins: [
+							"explicitResourceManagement",
+							[ "importAttributes", { deprecatedAssertSyntax: true } ],
+						],
+					},
 				})!;
 				ast.program.body.unshift(
 					t.expressionStatement(
