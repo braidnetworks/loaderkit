@@ -17,6 +17,7 @@ const testAnyTypeScript = /\.[cm]?tsx?$/i;
 const testModule = /\.mtsx?$/i;
 const testCommonJS = /\.ctsx?$/i;
 const nodeVersion = `node${process.versions.node}`;
+const deprecatedAssertSyntax = /^(?:16|17|18\.1?[0-9]\.)/.test(process.versions.node);
 
 function makeFindConfiguration<Type extends object>(
 	configuration: string,
@@ -276,6 +277,7 @@ export const load: LoadHook = async (urlString, context, nextLoad) => {
 				const withMeta = babelGen.default(ast, {
 					retainLines: true,
 					sourceMaps: true,
+					importAttributesKeyword: deprecatedAssertSyntax ? "assert" : "with",
 					// @ts-expect-error -- The types of this property are still wrong in 2024
 					inputSourceMap: result.map,
 				});
