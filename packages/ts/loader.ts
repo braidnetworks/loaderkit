@@ -1,4 +1,3 @@
-import type { BuildFailure } from "esbuild";
 import type { LoadHook, ResolveHook } from "node:module";
 import { Buffer } from "node:buffer";
 import * as fs from "node:fs/promises";
@@ -7,8 +6,26 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { parse as babelParse, types as t } from "@babel/core";
 import babelGen from "@babel/generator";
 import { transform } from "esbuild";
+import JSON5 from "json5";
 import nodeResolve from "resolve";
-import { splitURLAndQuery, withNodeCallback } from "./utility.js";
+import { isBuildFailure, splitURLAndQuery, withNodeCallback } from "./utility.js";
+
+// `CompilerOptions` from "typescript" is slightly different.
+interface CompilerOptions {
+	emitDeclarationOnly?: boolean;
+	jsx?: "react-jsx" | "react-jsxdev" | "preserve" | "react-native" | "react" | undefined;
+	noEmit?: boolean;
+	outDir?: string;
+	preserveValueImports?: boolean;
+	rootDir?: string | undefined;
+	target?: string | undefined;
+	verbatimModuleSyntax?: boolean;
+}
+
+interface TypeScriptConfig {
+	compilerOptions?: CompilerOptions;
+	extends?: string;
+}
 
 const self = new URL(import.meta.url);
 const ignoreString = self.searchParams.get("ignore");
@@ -61,13 +78,12 @@ const [ findPackageJson ] = makeFindConfiguration(
 const [ findTsConfigJson, readTsConfigJson ] = makeFindConfiguration(
 	"tsconfig.json",
 	async (content, configPath) => {
-		// eslint-disable-next-line @typescript-eslint/no-implied-eval, no-new-func
-		let tsConfigJson = new Function(`return ${content}`)() as Record<string, any>;
+		let tsConfigJson: TypeScriptConfig = JSON5.parse(content);
 		let tsConfigPath = configPath;
-		if (tsConfigJson.compilerOptions.outDir !== undefined) {
+		if (tsConfigJson.compilerOptions?.outDir !== undefined) {
 			tsConfigJson.compilerOptions.outDir = join(dirname(tsConfigPath), tsConfigJson.compilerOptions.outDir);
 		}
-		if (tsConfigJson.compilerOptions.rootDir !== undefined) {
+		if (tsConfigJson.compilerOptions?.rootDir !== undefined) {
 			tsConfigJson.compilerOptions.rootDir = join(dirname(tsConfigPath), tsConfigJson.compilerOptions.rootDir);
 		}
 		while (tsConfigJson.extends !== undefined) {
@@ -100,7 +116,7 @@ async function outputToSource(path: string) {
 						return path.replace(/\.([cm])?js(x?)$/i, ".$1ts$2");
 					}
 				} else if (path.startsWith(outDir)) {
-					return (rootDir as string) + path.slice(outDir.length).replace(/\.([cm])?js(x?)$/i, ".$1ts$2");
+					return rootDir + path.slice(outDir.length).replace(/\.([cm])?js(x?)$/i, ".$1ts$2");
 				}
 			}
 		}
@@ -118,7 +134,7 @@ async function sourceToOutput(path: string) {
 					const output = path.replace(/\.([cm])?ts(x?)$/i, ".$1js$2");
 					return [ output, tsConfigJson ] as const;
 				} else {
-					const output = (outDir as string) + path.slice(rootDir.length).replace(/\.([cm])?ts(x?)$/i, ".$1js$2");
+					const output = outDir + path.slice(rootDir.length).replace(/\.([cm])?ts(x?)$/i, ".$1js$2");
 					return [ output, tsConfigJson ] as const;
 				}
 			}
@@ -230,7 +246,7 @@ export const load: LoadHook = async (urlString, context, nextLoad) => {
 			}();
 		// Compile from TypeScript
 		const content = await fs.readFile(locationPath, "utf8");
-		const compilerOptions: Record<string, any> = tsConfigJson?.compilerOptions ?? {};
+		const compilerOptions = tsConfigJson?.compilerOptions ?? {};
 		try {
 			const result = await transform(content, {
 				format: format === "module" ? "esm" : "cjs",
@@ -240,9 +256,9 @@ export const load: LoadHook = async (urlString, context, nextLoad) => {
 				sourcemap: "external",
 				tsconfigRaw: {
 					compilerOptions: {
-						jsx: compilerOptions.jsx,
-						preserveValueImports: compilerOptions.preserveValueImports || compilerOptions.verbatimModuleSyntax,
-						target: compilerOptions.target,
+						jsx: compilerOptions.jsx ?? "preserve",
+						preserveValueImports: compilerOptions.verbatimModuleSyntax ?? compilerOptions.preserveValueImports!,
+						target: compilerOptions.target ?? "esnext",
 					},
 				},
 			});
@@ -292,16 +308,15 @@ export const load: LoadHook = async (urlString, context, nextLoad) => {
 				shortCircuit: true,
 				source: responsePayload,
 			};
-		} catch (error: any) {
-			if (error.errors) {
-				const buildError: BuildFailure = error;
-				const message = buildError.errors[0]!;
+		} catch (cause: unknown) {
+			if (isBuildFailure(cause)) {
+				const message = cause.errors[0]!;
 				const location = message.location === null ? "" : `:${message.location.line}:${message.location.column}`;
-				const previousStack = error.stack.slice(error.stack.indexOf("\n    at"));
-				const stack = `SyntaxError: ${message.text}\n    at (${urlString}${location})${previousStack}`;
-				throw Object.assign(new SyntaxError(message.text), { stack });
+				const stack = `SyntaxError: ${message.text}\n    at (${urlString}${location})`;
+				throw Object.assign(new SyntaxError(message.text, { cause }), { stack });
 			} else {
 				// Greppable. It means babel failed to parse/process the response from esbuild
+				const error = cause as Error;
 				throw Object.assign(new SyntaxError(error.message), {
 					note: "this happened in the loader",
 					stack: error.stack,

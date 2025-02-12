@@ -1,3 +1,10 @@
+import type { BuildFailure } from "esbuild";
+
+/** @internal */
+export function isBuildFailure(error: unknown): error is BuildFailure & Error {
+	return typeof error === "object" && error !== null && "errors" in error;
+}
+
 /** @internal */
 export function splitURLAndQuery(url: string) {
 	const ii = url.indexOf("?");
