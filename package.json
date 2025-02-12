@@ -18,7 +18,7 @@
 		"type": "git",
 		"url": "git+https://github.com/braidnetworks/loaderkit.git"
 	},
-	"author": "https://github.com/braidnetworks/",
+	"author": "https://github.com/laverdet/",
 	"license": "ISC",
 	"homepage": "https://github.com/braidnetworks/loaderkit#readme"
 }
