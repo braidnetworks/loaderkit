@@ -1,17 +1,34 @@
+import type { FileSystemAsync, FileSystemSync, FileSystemTask } from "./fs.js";
+import type { Task } from "@braidai/lang/task/utility";
+import { begin, expect, task } from "@braidai/lang/task/task";
+import { makeFileSystemAsyncAdapter, makeFileSystemSyncAdapter } from "./adapter.js";
 import { nodeCoreModules } from "./node-modules.js";
+
+export interface Resolution {
+	format: string | undefined;
+	resolved: URL;
+}
+
+export async function resolve(fs: FileSystemAsync, specifier: string, parentURL: URL): Promise<Resolution> {
+	return task(() => resolved(makeFileSystemAsyncAdapter(fs), specifier, parentURL));
+}
+
+export function resolveSync(fs: FileSystemSync, specifier: string, parentURL: URL): Resolution {
+	return expect(begin(task(() => resolved(makeFileSystemSyncAdapter(fs), specifier, parentURL))));
+}
 
 // defaultConditions is the conditional environment name array, [ "node", "import" ].
 const defaultConditions = [ "node", "import" ];
 
 // ESM_RESOLVE(specifier, parentURL)
-export function esmResolve(fs: Package, specifier: string, parentURL: URL) {
+function *resolved(fs: FileSystemTask, specifier: string, parentURL: URL): Task<Resolution> {
 	// 1. Let resolved be undefined.
-	const resolved = (() => {
-		try {
+	const resolved = yield* function*(): Task<URL> {
+		if (URL.canParse(specifier)) {
 			// 2. If specifier is a valid URL, then
 			//   1. Set resolved to the result of parsing and reserializing specifier as a URL.
 			return new URL(specifier);
-		} catch {}
+		}
 
 		// 3. Otherwise, if specifier starts with "/", "./", or "../", then
 		//   1. Set resolved to the URL resolution of specifier relative to parentURL.
@@ -22,17 +39,17 @@ export function esmResolve(fs: Package, specifier: string, parentURL: URL) {
 		// 4. Otherwise, if specifier starts with "#", then
 		//   1. Set resolved to the result of PACKAGE_IMPORTS_RESOLVE(specifier, parentURL, defaultConditions).
 		if (specifier.startsWith("#")) {
-			return packageImportsResolve(fs, specifier, parentURL, defaultConditions);
+			return yield* packageImportsResolve(fs, specifier, parentURL, defaultConditions);
 		}
 
 		// 5. Otherwise,
 		//   1. Note: specifier is now a bare specifier.
 		//   2. Set resolved the result of PACKAGE_RESOLVE(specifier, parentURL).
-		return packageResolve(fs, specifier, parentURL);
-	})();
+		return yield* packageResolve(fs, specifier, parentURL);
+	}();
 
 	// 6. Let format be undefined.
-	const format = (() => {
+	const format = yield* function*(): Task<string | undefined> {
 		// 7. If resolved is a "file:" URL, then
 		if (resolved.protocol === "file:") {
 			// 1. If resolved contains any percent encodings of "/" or "\" ("%2F" and "%5C" respectively), then
@@ -42,20 +59,20 @@ export function esmResolve(fs: Package, specifier: string, parentURL: URL) {
 			}
 
 			// 2. If the file at resolved is a directory, then
-			if (fs.directoryExists(resolved.pathname)) {
+			if (yield* fs.directoryExists(resolved.pathname)) {
 				// 1. Throw an Unsupported Directory Import error.
 				throw new Error("Unsupported Directory Import");
 			}
 
 			// 3. If the file at resolved does not exist, then
-			if (!fs.fileExists(resolved.pathname)) {
+			if (!(yield* fs.fileExists(resolved.pathname))) {
 				// 1. Throw a Module Not Found error.
 				throw new Error("Module Not Found");
 			}
 
 			// 4. Set resolved to the real path of resolved, maintaining the same URL querystring and fragment components.
 			// 5. Set format to the result of ESM_FILE_FORMAT(resolved).
-			return esmFileFormat(fs, resolved);
+			return yield* esmFileFormat(fs, resolved);
 		}
 
 		// 8. Otherwise,
@@ -63,19 +80,18 @@ export function esmResolve(fs: Package, specifier: string, parentURL: URL) {
 			// 1. Set format the module format of the content type associated with the URL resolved.
 			return "node";
 		}
-
-		// nb: otherwise omitted
-
-	})();
+	}();
 
 	// 9. Return format and resolved to the loading phase
 	return { format, resolved };
 }
 
 // PACKAGE_RESOLVE(packageSpecifier, parentURL)
-function packageResolve(fs: Package, packageSpecifier: string, parentURL: URL) {
+function *packageResolve(fs: FileSystemTask, packageSpecifier: string, parentURL_: URL): Task<URL> {
+	let parentURL = parentURL_;
+
 	// 1. Let packageName be undefined.
-	const packageName = (() => {
+	const packageName = function() {
 		// 2. If packageSpecifier is an empty string, then
 		if (packageSpecifier === "") {
 			// 1. Throw an Invalid Module Specifier error.
@@ -92,7 +108,7 @@ function packageResolve(fs: Package, packageSpecifier: string, parentURL: URL) {
 		if (!packageSpecifier.startsWith("@")) {
 			// 1. Set packageName to the substring of packageSpecifier until the first "/" separator or
 			//    the end of the string.
-			return packageSpecifier.split("/")[0];
+			return packageSpecifier.split("/")[0]!;
 		}
 
 		// 5. Otherwise,
@@ -104,8 +120,8 @@ function packageResolve(fs: Package, packageSpecifier: string, parentURL: URL) {
 		}
 		// 2. Set packageName to the substring of packageSpecifier until the second "/" separator or the
 		//    end of the string.
-		return matches[1];
-	})();
+		return matches[1]!;
+	}();
 
 	// 6. If packageName starts with "." or contains "\" or "%", then
 	if (packageName.startsWith(".") || packageName.includes("\\") || packageName.includes("%")) {
@@ -124,7 +140,7 @@ function packageResolve(fs: Package, packageSpecifier: string, parentURL: URL) {
 	}
 
 	// 9. Let selfUrl be the result of PACKAGE_SELF_RESOLVE(packageName, packageSubpath, parentURL).
-	const selfUrl = packageSelfResolve(fs, packageName, packageSubpath, parentURL);
+	const selfUrl = yield* packageSelfResolve(fs, packageName, packageSubpath, parentURL);
 
 	// 10. If selfUrl is not undefined, return selfUrl.
 	if (selfUrl !== undefined) {
@@ -142,25 +158,25 @@ function packageResolve(fs: Package, packageSpecifier: string, parentURL: URL) {
 		parentURL = new URL("../", parentURL);
 
 		// 3. If the folder at packageURL does not exist, then
-		if (!fs.directoryExists(packageURL.pathname)) {
+		if (!(yield* fs.directoryExists(packageURL.pathname))) {
 			// 1. Continue the next loop iteration.
 			continue;
 		}
 
 		// 4. Let pjson be the result of READ_PACKAGE_JSON(packageURL).
-		const pjson = readPackageJson(fs, packageURL);
+		const pjson = yield* readPackageJson(fs, packageURL);
 
 		// 5. If pjson is not null and pjson.exports is not null or undefined, then
-		if (pjson !== null && pjson.exports != null) {
+		if (pjson?.exports != null) {
 			// 1. Return the result of PACKAGE_EXPORTS_RESOLVE(packageURL, packageSubpath, pjson.exports,
 			//    defaultConditions).
-			return packageExportsResolve(fs, packageURL, packageSubpath, pjson.exports, defaultConditions);
+			return yield* packageExportsResolve(fs, packageURL, packageSubpath, pjson.exports, defaultConditions);
 		}
 
 		// 6. Otherwise, if packageSubpath is equal to ".", then
 		if (packageSubpath === ".") {
 			// 1. If pjson.main is a string, then
-			if (typeof pjson.main === "string") {
+			if (typeof pjson?.main === "string") {
 				// 1. Return the URL resolution of main in packageURL.
 				return new URL(pjson.main, packageURL);
 			}
@@ -176,9 +192,9 @@ function packageResolve(fs: Package, packageSpecifier: string, parentURL: URL) {
 }
 
 // PACKAGE_SELF_RESOLVE(packageName, packageSubpath, parentURL)
-function packageSelfResolve(fs: Package, packageName: string, packageSubpath: string, parentURL: URL) {
+function *packageSelfResolve(fs: FileSystemTask, packageName: string, packageSubpath: string, parentURL: URL): Task<URL | undefined> {
 	// 1. Let packageURL be the result of LOOKUP_PACKAGE_SCOPE(parentURL).
-	const packageURL = lookupPackageScope(fs, parentURL);
+	const packageURL = yield* lookupPackageScope(fs, parentURL);
 
 	// 2. If packageURL is null, then
 	if (packageURL === null) {
@@ -187,10 +203,10 @@ function packageSelfResolve(fs: Package, packageName: string, packageSubpath: st
 	}
 
 	// 3. Let pjson be the result of READ_PACKAGE_JSON(packageURL).
-	const pjson = readPackageJson(fs, packageURL);
+	const pjson = yield* readPackageJson(fs, packageURL);
 
 	// 4. If pjson is null or if pjson.exports is null or undefined, then
-	if (pjson === null || pjson.exports == null) {
+	if (pjson?.exports == null) {
 		// 1. Return undefined.
 		return;
 	}
@@ -198,21 +214,21 @@ function packageSelfResolve(fs: Package, packageName: string, packageSubpath: st
 	// 5. If pjson.name is equal to packageName, then
 	if (pjson.name === packageName) {
 		// 1. Return the result of PACKAGE_EXPORTS_RESOLVE(packageURL, packageSubpath, pjson.exports, defaultConditions).
-		return packageExportsResolve(fs, packageURL, packageSubpath, pjson.exports, defaultConditions);
+		return yield* packageExportsResolve(fs, packageURL, packageSubpath, pjson.exports, defaultConditions);
 	}
 
 	// 6. Otherwise, return undefined.
-
 }
 
 // PACKAGE_EXPORTS_RESOLVE(packageURL, subpath, exports, conditions)
-export function packageExportsResolve(
-	fs: Package,
+/** @internal */
+export function *packageExportsResolve(
+	fs: FileSystemTask,
 	packageURL: URL,
 	subpath: string,
 	exports: unknown,
 	conditions: readonly string[],
-) {
+): Task<URL> {
 	// 1. If exports is an Object with both a key starting with "." and a key not starting with ".",
 	//    throw an Invalid Package Configuration error.
 	const exportsIsObject = typeof exports === "object" && exports !== null;
@@ -244,7 +260,7 @@ export function packageExportsResolve(
 		if (mainExport !== undefined) {
 			// 1. Let resolved be the result of PACKAGE_TARGET_RESOLVE(packageURL, mainExport, null,
 			//    false, conditions).
-			const resolved = packageTargetResolve(fs, packageURL, mainExport, null, false, conditions);
+			const resolved = yield* packageTargetResolve(fs, packageURL, mainExport, null, false, conditions);
 
 			// 2. If resolved is not null or undefined, return resolved.
 			if (resolved != null) {
@@ -258,14 +274,8 @@ export function packageExportsResolve(
 		// 1. Assert: subpath begins with "./".
 		// 2. Let resolved be the result of PACKAGE_IMPORTS_EXPORTS_RESOLVE(subpath, exports,
 		//    packageURL, false, conditions).
-		const resolved = packageImportsExportsResolve(
-			fs,
-			subpath,
-      exports satisfies object as Record<string, unknown>,
-      packageURL,
-      false,
-      conditions,
-		);
+		const exportRecord = exports satisfies object as Record<string, unknown>;
+		const resolved = yield* packageImportsExportsResolve(fs, subpath, exportRecord, packageURL, false, conditions);
 
 		// 3. If resolved is not null or undefined, return resolved.
 		if (resolved != null) {
@@ -278,7 +288,8 @@ export function packageExportsResolve(
 }
 
 // PACKAGE_IMPORTS_RESOLVE(specifier, parentURL, conditions)
-export function packageImportsResolve(fs: Package, specifier: string, parentURL: URL, conditions: readonly string[]) {
+/** @internal */
+export function *packageImportsResolve(fs: FileSystemTask, specifier: string, parentURL: URL, conditions: readonly string[]): Task<URL> {
 	// 1. Assert: specifier begins with "#".
 	// 2. If specifier is exactly equal to "#" or starts with "#/", then
 	if (specifier === "#" || specifier.startsWith("#/")) {
@@ -287,19 +298,19 @@ export function packageImportsResolve(fs: Package, specifier: string, parentURL:
 	}
 
 	// 3. Let packageURL be the result of LOOKUP_PACKAGE_SCOPE(parentURL).
-	const packageURL = lookupPackageScope(fs, parentURL);
+	const packageURL = yield* lookupPackageScope(fs, parentURL);
 
 	// 4. If packageURL is not null, then
 	if (packageURL !== null) {
 		// 1. Let pjson be the result of READ_PACKAGE_JSON(packageURL).
-		const pjson = readPackageJson(fs, packageURL);
+		const pjson = yield* readPackageJson(fs, packageURL);
 
 		// 2. If pjson.imports is a non-null Object, then
-		if (typeof pjson.imports === "object" && pjson?.imports !== null) {
+		if (typeof pjson?.imports === "object" && pjson.imports !== null) {
 			// 1. Let resolved be the result of PACKAGE_IMPORTS_EXPORTS_RESOLVE(specifier, pjson.imports,
 			//    packageURL, true, conditions).
-			const resolved = packageImportsExportsResolve(fs, specifier, pjson.imports, packageURL, true, conditions);
-
+			const imports = pjson.imports satisfies object as Record<string, unknown>;
+			const resolved = yield* packageImportsExportsResolve(fs, specifier, imports, packageURL, true, conditions);
 			// 2. If resolved is not null or undefined, return resolved.
 			if (resolved != null) {
 				return resolved;
@@ -312,14 +323,14 @@ export function packageImportsResolve(fs: Package, specifier: string, parentURL:
 }
 
 // PACKAGE_IMPORTS_EXPORTS_RESOLVE(matchKey, matchObj, packageURL, isImports, conditions)
-function packageImportsExportsResolve(
-	fs: Package,
+function *packageImportsExportsResolve(
+	fs: FileSystemTask,
 	matchKey: string,
 	matchObj: Record<string, unknown>,
 	packageURL: URL,
 	isImports: boolean,
 	conditions: readonly string[],
-) {
+): Task<URL | null | undefined> {
 	// 1. If matchKey is a key of matchObj and does not contain "*", then
 	if (matchKey in matchObj && !matchKey.includes("*")) {
 		// 1. Let target be the value of matchObj[matchKey].
@@ -327,7 +338,7 @@ function packageImportsExportsResolve(
 
 		// 2. Return the result of PACKAGE_TARGET_RESOLVE(packageURL, target, null, isImports,
 		//    conditions).
-		return packageTargetResolve(fs, packageURL, target, null, isImports, conditions);
+		return yield* packageTargetResolve(fs, packageURL, target, null, isImports, conditions);
 	}
 
 	// 2. Let expansionKeys be the list of keys of matchObj containing only a single "*", sorted by
@@ -363,7 +374,7 @@ function packageImportsExportsResolve(
 
 				// 3. Return the result of PACKAGE_TARGET_RESOLVE(packageURL, target, patternMatch,
 				//    isImports, conditions).
-				return packageTargetResolve(fs, packageURL, target, patternMatch, isImports, conditions);
+				return yield* packageTargetResolve(fs, packageURL, target, patternMatch, isImports, conditions);
 			}
 		}
 	}
@@ -412,14 +423,14 @@ function patternKeyCompare(keyA: string, keyB: string) {
 }
 
 // PACKAGE_TARGET_RESOLVE(packageURL, target, patternMatch, isImports, conditions)
-function packageTargetResolve(
-	fs: Package,
+function *packageTargetResolve(
+	fs: FileSystemTask,
 	packageURL: URL,
 	target: unknown,
 	patternMatch: string | null,
 	isImports: boolean,
 	conditions: readonly string[],
-): URL | null | undefined {
+): Task<URL | null | undefined> {
 	// 1. If target is a String, then
 	if (typeof target === "string") {
 		// 1. If target does not start with "./", then
@@ -428,17 +439,17 @@ function packageTargetResolve(
 			//    URL, then
 			if (!isImports || target.startsWith("../") || target.startsWith("/") || URL.canParse(target)) {
 				// 1. Throw an Invalid Package Target error.
-				throw new Error("Invalid Package Target error");
+				throw new Error("Invalid Package Target");
 			}
 
 			// 2. If patternMatch is a String, then
-			if (patternMatch !== null) {
+			if (patternMatch === null) {
+				// 3. Return PACKAGE_RESOLVE(target, packageURL + "/").
+				return yield* packageResolve(fs, target, new URL(`${packageURL}/`));
+			} else {
 				// 1. Return PACKAGE_RESOLVE(target with every instance of "*" replaced by patternMatch,
 				//    packageURL + "/").
-				return packageResolve(fs, target.replace(/\*/g, patternMatch), new URL(`${packageURL}/`));
-			} else {
-				// 3. Return PACKAGE_RESOLVE(target, packageURL + "/").
-				return packageResolve(fs, target, new URL(`${packageURL}/`));
+				return yield* packageResolve(fs, target.replace(/\*/g, patternMatch), new URL(`${packageURL}/`));
 			}
 		}
 
@@ -451,7 +462,7 @@ function packageTargetResolve(
 				.split(/\/|\\/)
 				.some(segment => segment === "" || segment === "." || segment === ".." || segment === "node_modules")
 		) {
-			throw new Error("Invalid Package Target error");
+			throw new Error("Invalid Package Target");
 		}
 
 		// 3. Let resolvedTarget be the URL resolution of the concatenation of packageURL and target.
@@ -484,7 +495,7 @@ function packageTargetResolve(
 		// 1. If target contains any index property keys, as defined in ECMA-262 6.1.7 Array Index ,
 		//    throw an Invalid Package Configuration error.
 		if (Object.keys(target).some(key => /^[0-9]+$/.test(key))) {
-			throw new Error("Invalid Package Configuration error");
+			throw new Error("Invalid Package Configuration");
 		}
 
 		// 2. For each property p of target, in object insertion order as,
@@ -494,7 +505,7 @@ function packageTargetResolve(
 				// 1. Let targetValue be the value of the p property in target.
 				// 2. Let resolved be the result of PACKAGE_TARGET_RESOLVE(packageURL, targetValue, patternMatch,
 				//    isImports, conditions).
-				const resolved = packageTargetResolve(fs, packageURL, targetValue, patternMatch, isImports, conditions);
+				const resolved = yield* packageTargetResolve(fs, packageURL, targetValue, patternMatch, isImports, conditions);
 
 				// 3. If resolved is undefined, continue the loop.
 				if (resolved === undefined) {
@@ -521,7 +532,7 @@ function packageTargetResolve(
 		for (const targetValue of target) {
 			// 1. Let resolved be the result of PACKAGE_TARGET_RESOLVE(packageURL, targetValue, patternMatch,
 			//    isImports, conditions).
-			const resolved = packageTargetResolve(fs, packageURL, targetValue, patternMatch, isImports, conditions);
+			const resolved = yield* packageTargetResolve(fs, packageURL, targetValue, patternMatch, isImports, conditions);
 
 			// 2. If resolved is undefined, continue the loop.
 			if (resolved === undefined) {
@@ -543,11 +554,12 @@ function packageTargetResolve(
 	}
 
 	// 5. Otherwise throw an Invalid Package Target error.
-	throw new Error("Invalid Package Target error");
+	throw new Error("Invalid Package Target");
 }
 
 // ESM_FILE_FORMAT(url)
-export function esmFileFormat(fs: Package, url: URL) {
+/** @internal */
+export function *esmFileFormat(fs: FileSystemTask, url: URL): Task<string | undefined> {
 	// 1. Assert: url corresponds to an existing file.
 	// 2. If url ends in ".mjs", then
 	if (url.pathname.endsWith(".mjs")) {
@@ -574,7 +586,7 @@ export function esmFileFormat(fs: Package, url: URL) {
 	}
 
 	// 6. Let packageURL be the result of LOOKUP_PACKAGE_SCOPE(url).
-	const packageURL = lookupPackageScope(fs, url);
+	const packageURL = yield* lookupPackageScope(fs, url);
 	if (packageURL === null) {
 		// nb: The algorithm seems to be poorly specified here because `READ_PACKAGE_JSON` does not
 		// handle the null case, but `LOOKUP_PACKAGE_SCOPE` is allowed to return `null`.
@@ -582,12 +594,12 @@ export function esmFileFormat(fs: Package, url: URL) {
 	}
 
 	// 7. Let pjson be the result of READ_PACKAGE_JSON(packageURL).
-	const pjson = readPackageJson(fs, packageURL);
+	const pjson = yield* readPackageJson(fs, packageURL);
 
 	// 8. Let packageType be null.
 	// 9. If pjson?.type is "module" or "commonjs", then
 	//   1. Set packageType to pjson.type.
-	const packageType = pjson.type === "module" || pjson.type === "commonjs" ? (pjson.type as string) : null;
+	const packageType = pjson?.type === "module" || pjson?.type === "commonjs" ? pjson.type : null;
 
 	// 10. If url ends in ".js", then
 	if (url.pathname.endsWith(".js")) {
@@ -611,7 +623,7 @@ export function esmFileFormat(fs: Package, url: URL) {
 
 	// 11. If url does not have any extension, then
 	const segments = url.pathname.split("/");
-	if (!segments[segments.length - 1].includes(".")) {
+	if (!segments[segments.length - 1]!.includes(".")) {
 		// 1. If packageType is "module" and --experimental-wasm-modules is enabled and the file at url
 		//    contains the header for a WebAssembly module, then
 		//   1. Return "wasm".
@@ -633,11 +645,11 @@ export function esmFileFormat(fs: Package, url: URL) {
 	}
 
 	// 12. Return undefined (will throw during load phase).
-
 }
 
 // LOOKUP_PACKAGE_SCOPE(url)
-export function lookupPackageScope(fs: Package, url: URL) {
+/** @internal */
+export function *lookupPackageScope(fs: FileSystemTask, url: URL): Task<URL | null> {
 	if (url.protocol !== "file:") {
 		return null;
 	}
@@ -657,7 +669,7 @@ export function lookupPackageScope(fs: Package, url: URL) {
 		const pjsonURL = new URL("package.json", scopeURL);
 
 		// 4. if the file at pjsonURL exists, then
-		if (fs.fileExists(pjsonURL.pathname)) {
+		if (yield* fs.fileExists(pjsonURL.pathname)) {
 			// 1. Return scopeURL.
 			return scopeURL;
 		}
@@ -671,12 +683,13 @@ export function lookupPackageScope(fs: Package, url: URL) {
 }
 
 // READ_PACKAGE_JSON(packageURL)
-export function readPackageJson(fs: Package, packageURL: URL) {
+/** @internal */
+export function *readPackageJson(fs: FileSystemTask, packageURL: URL): Task<Record<string, unknown> | null> {
 	// 1. Let pjsonURL be the resolution of "package.json" within packageURL.
 	const pjsonURL = new URL("package.json", packageURL);
 
 	// 2. If the file at pjsonURL does not exist, then
-	if (!fs.fileExists(pjsonURL.pathname)) {
+	if (!(yield* fs.fileExists(pjsonURL.pathname))) {
 		// 1. Return null.
 		return null;
 	}
@@ -684,5 +697,9 @@ export function readPackageJson(fs: Package, packageURL: URL) {
 	// 3. If the file at packageURL does not parse as valid JSON, then
 	//   1. Throw an Invalid Package Configuration error.
 	// 4. Return the parsed JSON source of the file at pjsonURL.
-	return JSON.parse(fs.readFile(pjsonURL.pathname));
+	const jsonPayload: unknown = JSON.parse(yield* fs.readFile(pjsonURL.pathname));
+	if (typeof jsonPayload === "object" && jsonPayload !== null) {
+		return jsonPayload satisfies object as Record<string, unknown>;
+	}
+	throw new Error("Invalid Package Configuration");
 }

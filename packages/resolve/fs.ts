@@ -1,0 +1,66 @@
+import type { Task } from "@braidai/lang/task/utility";
+import * as fsS from "node:fs";
+import * as fs from "node:fs/promises";
+
+/** @internal */
+export interface FileSystemTask {
+	readonly directoryExists: (path: string) => Task<boolean>;
+	readonly fileExists: (path: string) => Task<boolean>;
+	readonly readFile: (path: string) => Task<string>;
+}
+
+export interface FileSystemAsync {
+	readonly directoryExists: (path: string) => Promise<boolean>;
+	readonly fileExists: (path: string) => Promise<boolean>;
+	readonly readFile: (path: string) => Promise<string>;
+}
+
+export interface FileSystemSync {
+	readonly directoryExists: (path: string) => boolean;
+	readonly fileExists: (path: string) => boolean;
+	readonly readFile: (path: string) => string;
+}
+
+export const defaultAsyncFileSystem: FileSystemAsync = {
+	directoryExists: async path => {
+		try {
+			const stat = await fs.stat(path);
+			return stat.isDirectory();
+		} catch {
+			return false;
+		}
+	},
+
+	fileExists: async path => {
+		try {
+			const stat = await fs.stat(path);
+			return stat.isFile();
+		} catch {
+			return false;
+		}
+	},
+
+	readFile: async path => fs.readFile(path, "utf8"),
+};
+
+export const defaultSyncFileSystem: FileSystemSync = {
+	directoryExists: path => {
+		try {
+			const stat = fsS.statSync(path);
+			return stat.isDirectory();
+		} catch {
+			return false;
+		}
+	},
+
+	fileExists: path => {
+		try {
+			const stat = fsS.statSync(path);
+			return stat.isFile();
+		} catch {
+			return false;
+		}
+	},
+
+	readFile: path => fsS.readFileSync(path, "utf8"),
+};

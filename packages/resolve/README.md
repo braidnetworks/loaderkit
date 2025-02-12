@@ -8,4 +8,11 @@ authored for [arethetypeswrong](https://arethetypeswrong.github.io).
 
 See also: [resolve](https://www.npmjs.com/package/resolve),
 [enhanced-resolve](https://github.com/webpack/enhanced-resolve), and
-[esm-resolve](https://www.npmjs.com/package/esm-resolve).
+[esm-resolve](https://www.npmjs.com/package/esm-resolve). This module addresses some complaints that
+none of the other implementations fully implement:
+
+- Web browser support
+- Abstract filesystems
+- Sensible TypeScript-first types
+- Shakeable ESM exports
+- Promise & synchronous implementations

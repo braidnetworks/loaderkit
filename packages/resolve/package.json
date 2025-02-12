@@ -14,5 +14,8 @@
 	},
 	"author": "https://github.com/laverdet/",
 	"license": "ISC",
-	"homepage": "https://github.com/braidnetworks/loaderkit/packages/resolve#readme"
+	"homepage": "https://github.com/braidnetworks/loaderkit/packages/resolve#readme",
+	"dependencies": {
+		"@braidai/lang": "^1.0.0"
+	}
 }
