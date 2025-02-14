@@ -8,7 +8,7 @@
 		"prepare": "npx tsc -b"
 	},
 	"devDependencies": {
-		"@braidai/eslintrc": "^1.0.0",
+		"@braidai/eslintrc": "^1.2.0",
 		"@types/eslint": "^9.6.1",
 		"@types/node": "^22.13.1",
 		"eslint": "^9.20.1",

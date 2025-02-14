@@ -9,8 +9,8 @@ importers:
   .:
     devDependencies:
       '@braidai/eslintrc':
-        specifier: ^1.0.0
-        version: 1.1.1
+        specifier: ^1.2.0
+        version: 1.2.0
       '@types/eslint':
         specifier: ^9.6.1
         version: 9.6.1
@@ -127,8 +127,8 @@ packages:
     resolution: {integrity: sha512-eUuWapzEGWFEpHFxgEaBG8e3n6S8L3MSu0oda755rOfabWPnh0Our1AozNFVUxGFIhbKgd1ksprsoDGMinTOTA==}
     engines: {node: '>=6.9.0'}
 
-  '@braidai/eslintrc@1.1.1':
-    resolution: {integrity: sha512-I1Esyt/ALf8eLS5OGwqGfP8k2OMinEOI0PCdvvewDYj7y9CN+PSlyCtpIZlEvInSkejUmULNxdkpQiQUXVYzLA==}
+  '@braidai/eslintrc@1.2.0':
+    resolution: {integrity: sha512-xuyXwbS1ilNUpZKnhVEFKeNUUA27ffgnPdV2p9pO7iCsqy4LvI7amJdRoqrHz2E1o4DI4zdAneKpLLUVVgoasQ==}
 
   '@braidai/lang@1.0.0':
     resolution: {integrity: sha512-Ckpah5j8iAzDfc4YEP4uqnxyUznuAt6hRR093JSEYUgh2trQjCibQ2pfxHxzfz7y9vkUn9/rBxjFpGY+SPudHA==}
@@ -1434,7 +1434,7 @@ snapshots:
       '@babel/helper-string-parser': 7.25.9
       '@babel/helper-validator-identifier': 7.25.9
 
-  '@braidai/eslintrc@1.1.1':
+  '@braidai/eslintrc@1.2.0':
     dependencies:
       '@eslint/js': 9.20.0
       '@stylistic/eslint-plugin': 3.1.0(eslint@9.20.1)(typescript@5.7.3)
