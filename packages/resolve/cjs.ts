@@ -23,9 +23,9 @@ function *resolver(fs: FileSystemTask, fragment: string, parentURL: URL): Task<R
 	//   a. return the core module
 	//   b. STOP
 	if (fragment.startsWith("node:")) {
-		return { format: "node", resolved: new URL(fragment) };
+		return { format: "builtin", url: new URL(fragment) };
 	} else if (nodeCoreModules.includes(fragment)) {
-		return { format: "node", resolved: new URL(`node:${fragment}`) };
+		return { format: "builtin", url: new URL(`node:${fragment}`) };
 	}
 
 	// 2. If X begins with '/'
@@ -78,6 +78,17 @@ function *resolver(fs: FileSystemTask, fragment: string, parentURL: URL): Task<R
 	throw new Error("not found");
 }
 
+// MAYBE_DETECT_AND_LOAD(X)
+function maybeDetectAndLoad(fs: FileSystemTask, file: URL) {
+	// nb: Omitted.
+	return loadWithFormat(fs, file);
+	// 1. If X parses as a CommonJS module, load X as a CommonJS module. STOP.
+	// 2. Else, if the source code of X can be parsed as ECMAScript module using
+	//    DETECT_MODULE_SYNTAX defined in the ESM resolver
+	//   a. Load X as an ECMAScript module. STOP.
+	// 3. THROW the SyntaxError from attempting to parse X as CommonJS in 1. STOP.
+}
+
 // LOAD_AS_FILE(X)
 // X = parentURL + fragment
 function *loadAsFile(fs: FileSystemTask, fragment: string, parentURL: URL): Task<Resolution | undefined> {
@@ -87,10 +98,27 @@ function *loadAsFile(fs: FileSystemTask, fragment: string, parentURL: URL): Task
 		return yield* loadWithFormat(fs, asFile);
 	}
 
-	// 2. If X.js is a file, load X.js as JavaScript text. STOP
+	// 2. If X.js is a file,
 	const asJsFile = new URL(`${fragment}.js`, parentURL);
 	if (yield* fs.fileExists(verbatimFileURLToPath(asJsFile))) {
-		return yield* loadWithFormat(fs, asJsFile);
+		// a. Find the closest package scope SCOPE to X.
+		const packageURL = yield* lookupPackageScope(fs, parentURL);
+		// b. If no scope was found
+		if (packageURL === null) {
+			// 1. MAYBE_DETECT_AND_LOAD(X.js)
+			return yield* maybeDetectAndLoad(fs, asJsFile);
+		}
+		// c. If the SCOPE/package.json contains "type" field,
+		const pjson = yield* readPackageJson(fs, packageURL);
+		if (pjson?.type === "module") {
+			//   1. If the "type" field is "module", load X.js as an ECMAScript module. STOP.
+			return { format: "module", url: asJsFile };
+		} else if (pjson?.type === "commonjs") {
+			// 2. If the "type" field is "commonjs", load X.js as an CommonJS module. STOP.
+			return { format: "commonjs", url: asJsFile };
+		}
+		// d. MAYBE_DETECT_AND_LOAD(X.js)
+		return yield* maybeDetectAndLoad(fs, asJsFile);
 	}
 
 	// 3. If X.json is a file, parse X.json to a JavaScript Object. STOP
@@ -102,17 +130,31 @@ function *loadAsFile(fs: FileSystemTask, fragment: string, parentURL: URL): Task
 	// 4. If X.node is a file, load X.node as binary addon. STOP
 	const asNodeFile = new URL(`${fragment}.node`, parentURL);
 	if (yield* fs.fileExists(verbatimFileURLToPath(asNodeFile))) {
-		return { format: "node", resolved: asNodeFile };
+		return { format: "builtin", url: asNodeFile };
 	}
 }
 
 // LOAD_INDEX(X)
 // X = parentURL + fragment
 function *loadIndex(fs: FileSystemTask, fragment: string, parentURL: URL): Task<Resolution | undefined> {
-	// 1. If X/index.js is a file, load X/index.js as JavaScript text. STOP
+	// 1. If X/index.js is a file
 	const asJsIndex = new URL(`${fragment}/index.js`, parentURL);
 	if (yield* fs.fileExists(verbatimFileURLToPath(asJsIndex))) {
-		return yield* loadWithFormat(fs, asJsIndex);
+		// a. Find the closest package scope SCOPE to X.
+		const packageURL = yield* lookupPackageScope(fs, parentURL);
+		// b. If no scope was found, load X/index.js as a CommonJS module. STOP.
+		if (packageURL === null) {
+			return { format: "commonjs", url: asJsIndex };
+		}
+		// c. If the SCOPE/package.json contains "type" field,
+		const pjson = yield* readPackageJson(fs, packageURL);
+		if (pjson?.type === "module") {
+			// 1. If the "type" field is "module", load X/index.js as an ECMAScript module. STOP.
+			return { format: "module", url: asJsIndex };
+		} else {
+			// 2. Else, load X/index.js as an CommonJS module. STOP.
+			return { format: "commonjs", url: asJsIndex };
+		}
 	}
 
 	// 2. If X/index.json is a file, parse X/index.json to a JavaScript object. STOP
@@ -124,7 +166,7 @@ function *loadIndex(fs: FileSystemTask, fragment: string, parentURL: URL): Task<
 	// 3. If X/index.node is a file, load X/index.node as binary addon. STOP
 	const asNodeIndex = new URL(`${fragment}/index.node`, parentURL);
 	if (yield* fs.fileExists(verbatimFileURLToPath(asNodeIndex))) {
-		return { format: "native", resolved: asNodeIndex };
+		return { format: "addon", url: asNodeIndex };
 	}
 }
 
@@ -161,12 +203,12 @@ function *loadAsDirectory(fs: FileSystemTask, path: URL): Task<Resolution | unde
 	return yield* loadIndex(fs, ".", path);
 }
 
-function *loadWithFormat(fs: FileSystemTask, resolved: URL): Task<Resolution> {
+function *loadWithFormat(fs: FileSystemTask, url: URL): Task<Resolution> {
 	// nb: The algorithm doesn't specify this but the implementation seems to do something similar.
 	// You cannot require a bare `.js` file from a `.cjs` parent with a `{"type":"module"}`
 	// `package.json`.
-	const format = yield* esmFileFormat(fs, resolved);
-	return { format, resolved };
+	const format = yield* esmFileFormat(fs, url);
+	return { format, url };
 }
 
 // LOAD_NODE_MODULES(X, START)
@@ -232,11 +274,15 @@ function *loadPackageImports(fs: FileSystemTask, fragment: string, parentURL: UR
 		return;
 	}
 
-	// 4. let MATCH = PACKAGE_IMPORTS_RESOLVE(X, pathToFileURL(SCOPE), ["node", "require"]) defined in
-	//    the ESM resolver.
+	// 4. If `--experimental-require-module` is enabled
+	//   a. let CONDITIONS = ["node", "require", "module-sync"]
+	//   b. Else, let CONDITIONS = ["node", "require"]
+	// nb: Omitted
+
+	// 5. let MATCH = PACKAGE_IMPORTS_RESOLVE(X, pathToFileURL(SCOPE), CONDITIONS) [defined in the ESM resolver]
 	const match = yield* packageImportsResolve(fs, fragment, packageURL, [ "node", "require" ]);
 
-	// 5. RESOLVE_ESM_MATCH(MATCH).
+	// 6. RESOLVE_ESM_MATCH(MATCH).
 	return yield* resolveEsmMatch(fs, match);
 }
 
@@ -245,6 +291,7 @@ function *loadPackageExports(fs: FileSystemTask, fragment: string, parentURL: UR
 	// 1. Try to interpret X as a combination of NAME and SUBPATH where the name
 	//    may have a @scope/ prefix and the subpath begins with a slash (`/`).
 	const matches = /^((?:@[^/]+\/)?[^/]+)(.*)$/.exec(fragment);
+
 	// 2. If X does not match this pattern or DIR/NAME/package.json is not a file,
 	//    return.
 	if (matches === null) {
@@ -264,11 +311,17 @@ function *loadPackageExports(fs: FileSystemTask, fragment: string, parentURL: UR
 		return;
 	}
 
-	// 5. let MATCH = PACKAGE_EXPORTS_RESOLVE(pathToFileURL(DIR/NAME), "." + SUBPATH, `package.json`
-	//    "exports", ["node", "require"]) defined in the ESM resolver.
-	const match = yield* packageExportsResolve(fs, dir, `.${subpath}`, pjson.exports, [ "node", "require" ]);
+	// 5. If `--experimental-require-module` is enabled
+	//  a. let CONDITIONS = ["node", "require", "module-sync"]
+	//  b. Else, let CONDITIONS = ["node", "require"]
+	// nb: Omitted
+	const conditions = [ "node", "require" ];
 
-	// 6. RESOLVE_ESM_MATCH(MATCH)
+	// 6. let MATCH = PACKAGE_EXPORTS_RESOLVE(pathToFileURL(DIR/NAME), "." + SUBPATH, `package.json`
+	//    "exports", CONDITIONS) defined in the ESM resolver.
+	const match = yield* packageExportsResolve(fs, dir, `.${subpath}`, pjson.exports, conditions);
+
+	// 7. RESOLVE_ESM_MATCH(MATCH)
 	return yield* resolveEsmMatch(fs, match);
 }
 

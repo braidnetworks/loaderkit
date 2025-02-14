@@ -1,29 +1,30 @@
 import type { FileSystemAsync, FileSystemSync, FileSystemTask } from "./fs.js";
 import type { Task } from "@braidai/lang/task/utility";
+import type { ModuleFormat } from "node:module";
 import { begin, expect, task } from "@braidai/lang/task/task";
 import { makeFileSystemAsyncAdapter, makeFileSystemSyncAdapter } from "./adapter.js";
 import { nodeCoreModules } from "./node-modules.js";
 
 export interface Resolution {
-	format: string | undefined;
-	resolved: URL;
+	format: ModuleFormat | "addon" | undefined;
+	url: URL;
 }
 
 export async function resolve(fs: FileSystemAsync, specifier: string, parentURL: URL): Promise<Resolution> {
-	return task(() => resolved(makeFileSystemAsyncAdapter(fs), specifier, parentURL));
+	return task(() => resolver(makeFileSystemAsyncAdapter(fs), specifier, parentURL));
 }
 
 export function resolveSync(fs: FileSystemSync, specifier: string, parentURL: URL): Resolution {
-	return expect(begin(task(() => resolved(makeFileSystemSyncAdapter(fs), specifier, parentURL))));
+	return expect(begin(task(() => resolver(makeFileSystemSyncAdapter(fs), specifier, parentURL))));
 }
 
 // defaultConditions is the conditional environment name array, [ "node", "import" ].
 const defaultConditions = [ "node", "import" ];
 
 // ESM_RESOLVE(specifier, parentURL)
-function *resolved(fs: FileSystemTask, specifier: string, parentURL: URL): Task<Resolution> {
+function *resolver(fs: FileSystemTask, specifier: string, parentURL: URL): Task<Resolution> {
 	// 1. Let resolved be undefined.
-	const resolved = yield* function*(): Task<URL> {
+	const url = yield* function*(): Task<URL> {
 		if (URL.canParse(specifier)) {
 			// 2. If specifier is a valid URL, then
 			//   1. Set resolved to the result of parsing and reserializing specifier as a URL.
@@ -49,41 +50,41 @@ function *resolved(fs: FileSystemTask, specifier: string, parentURL: URL): Task<
 	}();
 
 	// 6. Let format be undefined.
-	const format = yield* function*(): Task<string | undefined> {
+	const format = yield* function*(): Task<ModuleFormat | "addon" | undefined> {
 		// 7. If resolved is a "file:" URL, then
-		if (resolved.protocol === "file:") {
+		if (url.protocol === "file:") {
 			// 1. If resolved contains any percent encodings of "/" or "\" ("%2F" and "%5C" respectively), then
-			if (/%2F|%5C/.test(resolved.href)) {
+			if (/%2F|%5C/.test(url.href)) {
 				// 1. Throw an Invalid Module Specifier error.
 				throw new Error("Invalid Module Specifier");
 			}
 
 			// 2. If the file at resolved is a directory, then
-			if (yield* fs.directoryExists(resolved.pathname)) {
+			if (yield* fs.directoryExists(url.pathname)) {
 				// 1. Throw an Unsupported Directory Import error.
 				throw new Error("Unsupported Directory Import");
 			}
 
 			// 3. If the file at resolved does not exist, then
-			if (!(yield* fs.fileExists(resolved.pathname))) {
+			if (!(yield* fs.fileExists(url.pathname))) {
 				// 1. Throw a Module Not Found error.
 				throw new Error("Module Not Found");
 			}
 
 			// 4. Set resolved to the real path of resolved, maintaining the same URL querystring and fragment components.
 			// 5. Set format to the result of ESM_FILE_FORMAT(resolved).
-			return yield* esmFileFormat(fs, resolved);
+			return yield* esmFileFormat(fs, url);
 		}
 
 		// 8. Otherwise,
-		if (resolved.protocol === "node:") {
+		if (url.protocol === "node:") {
 			// 1. Set format the module format of the content type associated with the URL resolved.
-			return "node";
+			return "builtin";
 		}
 	}();
 
 	// 9. Return format and resolved to the loading phase
-	return { format, resolved };
+	return { format, url };
 }
 
 // PACKAGE_RESOLVE(packageSpecifier, parentURL)
@@ -449,7 +450,7 @@ function *packageTargetResolve(
 			} else {
 				// 1. Return PACKAGE_RESOLVE(target with every instance of "*" replaced by patternMatch,
 				//    packageURL + "/").
-				return yield* packageResolve(fs, target.replace(/\*/g, patternMatch), new URL(`${packageURL}/`));
+				return yield* packageResolve(fs, target.replaceAll("*", patternMatch), new URL(`${packageURL}/`));
 			}
 		}
 
@@ -487,7 +488,7 @@ function *packageTargetResolve(
 		}
 
 		// 7. Return the URL resolution of resolvedTarget with every instance of "*" replaced with patternMatch.
-		return new URL(resolvedTarget.href.replace(/\*/g, patternMatch));
+		return new URL(resolvedTarget.href.replaceAll("*", patternMatch));
 	}
 
 	// 2. Otherwise, if target is a non-null Object, then
@@ -559,7 +560,7 @@ function *packageTargetResolve(
 
 // ESM_FILE_FORMAT(url)
 /** @internal */
-export function *esmFileFormat(fs: FileSystemTask, url: URL): Task<string | undefined> {
+export function *esmFileFormat(fs: FileSystemTask, url: URL): Task<ModuleFormat | "addon" | undefined> {
 	// 1. Assert: url corresponds to an existing file.
 	// 2. If url ends in ".mjs", then
 	if (url.pathname.endsWith(".mjs")) {
@@ -585,7 +586,12 @@ export function *esmFileFormat(fs: FileSystemTask, url: URL): Task<string | unde
 		return "wasm";
 	}
 
-	// 6. Let packageURL be the result of LOOKUP_PACKAGE_SCOPE(url).
+	// 6. If --experimental-addon-modules is enabled and url ends in ".node", then
+	if (url.pathname.endsWith(".node")) {
+		return "addon";
+	}
+
+	// 7. Let packageURL be the result of LOOKUP_PACKAGE_SCOPE(url).
 	const packageURL = yield* lookupPackageScope(fs, url);
 	if (packageURL === null) {
 		// nb: The algorithm seems to be poorly specified here because `READ_PACKAGE_JSON` does not
@@ -593,15 +599,15 @@ export function *esmFileFormat(fs: FileSystemTask, url: URL): Task<string | unde
 		throw new Error("Invalid Module Specifier");
 	}
 
-	// 7. Let pjson be the result of READ_PACKAGE_JSON(packageURL).
+	// 8. Let pjson be the result of READ_PACKAGE_JSON(packageURL).
 	const pjson = yield* readPackageJson(fs, packageURL);
 
-	// 8. Let packageType be null.
-	// 9. If pjson?.type is "module" or "commonjs", then
+	// 9. Let packageType be null.
+	// 10. If pjson?.type is "module" or "commonjs", then
 	//   1. Set packageType to pjson.type.
 	const packageType = pjson?.type === "module" || pjson?.type === "commonjs" ? pjson.type : null;
 
-	// 10. If url ends in ".js", then
+	// 11. If url ends in ".js", then
 	if (url.pathname.endsWith(".js")) {
 		// 1. If packageType is not null, then
 		if (packageType !== null) {
@@ -612,16 +618,15 @@ export function *esmFileFormat(fs: FileSystemTask, url: URL): Task<string | unde
 			return packageType;
 		}
 
-		// 2. If --experimental-detect-module is enabled and the source of module contains static
-		//    import or export syntax, then
+		// 2. If the result of DETECT_MODULE_SYNTAX(source) is true, then
 		//   1. Return "module".
-		// nb: omitted
+		// nb: Omitted. Also, `source` is not defined.
 
 		// 3. Return "commonjs".
 		return "commonjs";
 	}
 
-	// 11. If url does not have any extension, then
+	// 12. If url does not have any extension, then
 	const segments = url.pathname.split("/");
 	if (!segments[segments.length - 1]!.includes(".")) {
 		// 1. If packageType is "module" and --experimental-wasm-modules is enabled and the file at url
@@ -635,8 +640,7 @@ export function *esmFileFormat(fs: FileSystemTask, url: URL): Task<string | unde
 			return packageType;
 		}
 
-		// 3. If --experimental-detect-module is enabled and the source of module contains static import
-		//    or export syntax, then
+		// 3. If the result of DETECT_MODULE_SYNTAX(source) is true, then
 		//   1. Return "module".
 		// nb: omitted
 
@@ -644,7 +648,7 @@ export function *esmFileFormat(fs: FileSystemTask, url: URL): Task<string | unde
 		return "commonjs";
 	}
 
-	// 12. Return undefined (will throw during load phase).
+	// 13. Return undefined (will throw during load phase).
 }
 
 // LOOKUP_PACKAGE_SCOPE(url)
@@ -702,4 +706,19 @@ export function *readPackageJson(fs: FileSystemTask, packageURL: URL): Task<Reco
 		return jsonPayload satisfies object as Record<string, unknown>;
 	}
 	throw new Error("Invalid Package Configuration");
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function detectModuleSyntax(fs: FileSystemTask, source: string) {
+	// 1. Parse source as an ECMAScript module.
+	// 2. If the parse is successful, then
+	//   1. If source contains top-level `await`, static `import` or `export` statements, or
+	//      `import.meta`, return true.
+	//   2. If source contains a top-level lexical declaration (`const`, `let`, or `class`) of any
+	//      of the CommonJS wrapper variables (`require`, `exports`,`module`, `__filename`, or
+	//      `__dirname`) then return true.
+	// 3. Else return false.
+
+	// nb: Haha, yeah right
+	return false;
 }

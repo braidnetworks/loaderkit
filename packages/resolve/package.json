@@ -3,7 +3,7 @@
 	"type": "module",
 	"version": "1.0.0",
 	"exports": {
-		"./*": "./*.js"
+		"./*": "./dist/*.js"
 	},
 	"scripts": {
 		"prepare": "rm -rf dist; npx tsc -b"
