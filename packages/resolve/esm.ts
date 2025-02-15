@@ -92,19 +92,19 @@ function *packageResolve(fs: FileSystemTask, packageSpecifier: string, parentURL
 	let parentURL = parentURL_;
 
 	// 1. Let packageName be undefined.
+	// 2. If packageSpecifier is an empty string, then
+	if (packageSpecifier === "") {
+		// 1. Throw an Invalid Module Specifier error.
+		throw new Error("Invalid Module Specifier");
+	}
+
+	// 3. If packageSpecifier is a Node.js builtin module name, then
+	if (nodeCoreModules.includes(packageSpecifier)) {
+		// 1. Return the string "node:" concatenated with packageSpecifier.
+		return new URL(`node:${packageSpecifier}`);
+	}
+
 	const packageName = function() {
-		// 2. If packageSpecifier is an empty string, then
-		if (packageSpecifier === "") {
-			// 1. Throw an Invalid Module Specifier error.
-			throw new Error("Invalid Module Specifier");
-		}
-
-		// 3. If packageSpecifier is a Node.js builtin module name, then
-		if (nodeCoreModules.includes(packageSpecifier)) {
-			// 1. Return the string "node:" concatenated with packageSpecifier.
-			return `node:${packageSpecifier}`;
-		}
-
 		// 4. If packageSpecifier does not start with "@", then
 		if (!packageSpecifier.startsWith("@")) {
 			// 1. Set packageName to the substring of packageSpecifier until the first "/" separator or
@@ -153,7 +153,8 @@ function *packageResolve(fs: FileSystemTask, packageSpecifier: string, parentURL
 	do {
 		// 1. Let packageURL be the URL resolution of "node_modules/" concatenated with
 		//    packageSpecifier, relative to parentURL.
-		const packageURL = new URL(`node_modules/${packageSpecifier}/`, parentURL);
+		// nb: Specification error! It is `packageName`.
+		const packageURL = new URL(`node_modules/${packageName}/`, parentURL);
 
 		// 2. Set parentURL to the parent folder URL of parentURL.
 		parentURL = new URL("../", parentURL);
@@ -243,7 +244,7 @@ export function *packageExportsResolve(
 	// 2. If subpath is equal to ".", then
 	if (subpath === ".") {
 		// 1. Let mainExport be undefined.
-		const mainExport = (() => {
+		const mainExport = function() {
 			// 2. If exports is a String or Array, or an Object containing no keys starting with ".", then
 			if (typeof exports === "string" || Array.isArray(exports) || !hasDotKeys) {
 				// 1. Set mainExport to exports.
@@ -255,7 +256,7 @@ export function *packageExportsResolve(
 				// 1. Set mainExport to the value of the "." property in exports.
 				return exports["."];
 			}
-		})();
+		}();
 
 		// 4. If mainExport is not undefined, then
 		if (mainExport !== undefined) {
@@ -333,7 +334,9 @@ function *packageImportsExportsResolve(
 	conditions: readonly string[],
 ): Task<URL | null | undefined> {
 	// 1. If matchKey is a key of matchObj and does not contain "*", then
-	if (matchKey in matchObj && !matchKey.includes("*")) {
+	// nb: `endsWith` check is not in the specification, but is present in the implementation.
+	//  https://github.com/nodejs/node/blob/579fc67d495daf76d1cb8f895d4ce79769dde5f3/lib/internal/modules/esm/resolve.js#L596
+	if (matchKey in matchObj && !matchKey.includes("*") && !matchKey.endsWith("/")) {
 		// 1. Let target be the value of matchObj[matchKey].
 		const target = matchObj[matchKey];
 
@@ -680,7 +683,7 @@ export function *lookupPackageScope(fs: FileSystemTask, url: URL): Task<URL | nu
 
 		// 1. Set scopeURL to the parent URL of scopeURL.
 		scopeURL = new URL("../", scopeURL);
-	} while (url.pathname !== "/");
+	} while (scopeURL.pathname !== "/");
 
 	// 3. Return null.
 	return null;

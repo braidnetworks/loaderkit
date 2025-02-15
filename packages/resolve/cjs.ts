@@ -352,7 +352,7 @@ function *loadPackageSelf(fs: FileSystemTask, fragment: string, parentURL: URL):
 
 	// 5. let MATCH = PACKAGE_EXPORTS_RESOLVE(pathToFileURL(SCOPE), "." + X.slice("name".length),
 	//    `package.json` "exports", ["node", "require"]) defined in the ESM resolver.
-	const match = yield* packageExportsResolve(fs, packageURL, `./${fragment.slice(pjson.name.length)}`, pjson.exports, defaultConditions);
+	const match = yield* packageExportsResolve(fs, packageURL, `.${fragment.slice(pjson.name.length)}`, pjson.exports, defaultConditions);
 
 	// 6. RESOLVE_ESM_MATCH(MATCH)
 	return yield* resolveEsmMatch(fs, match);

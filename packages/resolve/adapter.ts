@@ -2,6 +2,30 @@ import type { FileSystemAsync, FileSystemSync, FileSystemTask } from "./fs.js";
 import type { Task } from "@braidai/lang/task/utility";
 import { accept } from "@braidai/lang/task/utility";
 
+export function makeTestFileSystem(files: Record<string, string>) {
+	const fs: FileSystemSync = {
+		directoryExists(path) {
+			if (!path.pathname.endsWith("/")) {
+				return false;
+			}
+			const dir = decodeURIComponent(path.pathname.slice(1));
+			return Object.keys(files).some(key => key.startsWith(dir));
+		},
+		fileExists(path) {
+			return decodeURIComponent(path.pathname.slice(1)) in files;
+		},
+		readFile(path) {
+			const file = decodeURIComponent(path.pathname.slice(1));
+			const content = files[file];
+			if (content === undefined) {
+				throw new Error(`File not found: ${file}`);
+			}
+			return content;
+		},
+	};
+	return fs;
+}
+
 /** @internal */
 export function makeFileSystemSyncAdapter(fs: FileSystemSync): FileSystemTask {
 	return {
