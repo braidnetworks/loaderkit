@@ -60,13 +60,13 @@ function *resolver(fs: FileSystemTask, specifier: string, parentURL: URL): Task<
 			}
 
 			// 2. If the file at resolved is a directory, then
-			if (yield* fs.directoryExists(url.pathname)) {
+			if (yield* fs.directoryExists(url)) {
 				// 1. Throw an Unsupported Directory Import error.
 				throw new Error("Unsupported Directory Import");
 			}
 
 			// 3. If the file at resolved does not exist, then
-			if (!(yield* fs.fileExists(url.pathname))) {
+			if (!(yield* fs.fileExists(url))) {
 				// 1. Throw a Module Not Found error.
 				throw new Error("Module Not Found");
 			}
@@ -159,7 +159,7 @@ function *packageResolve(fs: FileSystemTask, packageSpecifier: string, parentURL
 		parentURL = new URL("../", parentURL);
 
 		// 3. If the folder at packageURL does not exist, then
-		if (!(yield* fs.directoryExists(packageURL.pathname))) {
+		if (!(yield* fs.directoryExists(packageURL))) {
 			// 1. Continue the next loop iteration.
 			continue;
 		}
@@ -673,7 +673,7 @@ export function *lookupPackageScope(fs: FileSystemTask, url: URL): Task<URL | nu
 		const pjsonURL = new URL("package.json", scopeURL);
 
 		// 4. if the file at pjsonURL exists, then
-		if (yield* fs.fileExists(pjsonURL.pathname)) {
+		if (yield* fs.fileExists(pjsonURL)) {
 			// 1. Return scopeURL.
 			return scopeURL;
 		}
@@ -693,7 +693,7 @@ export function *readPackageJson(fs: FileSystemTask, packageURL: URL): Task<Reco
 	const pjsonURL = new URL("package.json", packageURL);
 
 	// 2. If the file at pjsonURL does not exist, then
-	if (!(yield* fs.fileExists(pjsonURL.pathname))) {
+	if (!(yield* fs.fileExists(pjsonURL))) {
 		// 1. Return null.
 		return null;
 	}
@@ -701,7 +701,7 @@ export function *readPackageJson(fs: FileSystemTask, packageURL: URL): Task<Reco
 	// 3. If the file at packageURL does not parse as valid JSON, then
 	//   1. Throw an Invalid Package Configuration error.
 	// 4. Return the parsed JSON source of the file at pjsonURL.
-	const jsonPayload: unknown = JSON.parse(yield* fs.readFile(pjsonURL.pathname));
+	const jsonPayload: unknown = JSON.parse(yield* fs.readFile(pjsonURL));
 	if (typeof jsonPayload === "object" && jsonPayload !== null) {
 		return jsonPayload satisfies object as Record<string, unknown>;
 	}

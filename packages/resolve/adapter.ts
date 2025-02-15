@@ -6,15 +6,15 @@ import { accept } from "@braidai/lang/task/utility";
 export function makeFileSystemSyncAdapter(fs: FileSystemSync): FileSystemTask {
 	return {
 		// eslint-disable-next-line require-yield
-		*directoryExists(path: string): Task<boolean> {
+		*directoryExists(path: URL): Task<boolean> {
 			return fs.directoryExists(path);
 		},
 		// eslint-disable-next-line require-yield
-		*fileExists(path: string): Task<boolean> {
+		*fileExists(path: URL): Task<boolean> {
 			return fs.fileExists(path);
 		},
 		// eslint-disable-next-line require-yield
-		*readFile(path: string): Task<string> {
+		*readFile(path: URL): Task<string> {
 			return fs.readFile(path);
 		},
 	};
@@ -23,13 +23,13 @@ export function makeFileSystemSyncAdapter(fs: FileSystemSync): FileSystemTask {
 /** @internal */
 export function makeFileSystemAsyncAdapter(fs: FileSystemAsync): FileSystemTask {
 	return {
-		*directoryExists(path: string): Task<boolean> {
+		*directoryExists(path: URL): Task<boolean> {
 			return yield* accept(fs.directoryExists(path));
 		},
-		*fileExists(path: string): Task<boolean> {
+		*fileExists(path: URL): Task<boolean> {
 			return yield* accept(fs.fileExists(path));
 		},
-		*readFile(path: string): Task<string> {
+		*readFile(path: URL): Task<string> {
 			return yield* accept(fs.readFile(path));
 		},
 	};

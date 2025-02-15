@@ -4,21 +4,21 @@ import * as fs from "node:fs/promises";
 
 /** @internal */
 export interface FileSystemTask {
-	readonly directoryExists: (path: string) => Task<boolean>;
-	readonly fileExists: (path: string) => Task<boolean>;
-	readonly readFile: (path: string) => Task<string>;
+	readonly directoryExists: (path: URL) => Task<boolean>;
+	readonly fileExists: (path: URL) => Task<boolean>;
+	readonly readFile: (path: URL) => Task<string>;
 }
 
 export interface FileSystemAsync {
-	readonly directoryExists: (path: string) => Promise<boolean>;
-	readonly fileExists: (path: string) => Promise<boolean>;
-	readonly readFile: (path: string) => Promise<string>;
+	readonly directoryExists: (path: URL) => Promise<boolean>;
+	readonly fileExists: (path: URL) => Promise<boolean>;
+	readonly readFile: (path: URL) => Promise<string>;
 }
 
 export interface FileSystemSync {
-	readonly directoryExists: (path: string) => boolean;
-	readonly fileExists: (path: string) => boolean;
-	readonly readFile: (path: string) => string;
+	readonly directoryExists: (path: URL) => boolean;
+	readonly fileExists: (path: URL) => boolean;
+	readonly readFile: (path: URL) => string;
 }
 
 export const defaultAsyncFileSystem: FileSystemAsync = {

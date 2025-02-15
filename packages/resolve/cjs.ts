@@ -23,16 +23,15 @@ function *resolver(fs: FileSystemTask, fragment: string, parentURL: URL): Task<R
 	//   a. return the core module
 	//   b. STOP
 	if (fragment.startsWith("node:")) {
-		return { format: "builtin", url: new URL(fragment) };
+		return { format: "builtin", url: new URL(encodeFragment(fragment)) };
 	} else if (nodeCoreModules.includes(fragment)) {
-		return { format: "builtin", url: new URL(`node:${fragment}`) };
+		return { format: "builtin", url: new URL(`node:${encodeFragment(fragment)}`) };
 	}
 
 	// 2. If X begins with '/'
 	if (fragment.startsWith("/")) {
 		// a. set Y to be the file system root
-		// nb: omitted
-		throw new Error("not implemented");
+		parentURL = new URL("/", parentURL);
 	}
 
 	// 3. If X begins with './' or '/' or '../'
@@ -44,7 +43,7 @@ function *resolver(fs: FileSystemTask, fragment: string, parentURL: URL): Task<R
 		}
 
 		// b. LOAD_AS_DIRECTORY(Y + X)
-		const asDirectory = yield* loadAsDirectory(fs, new URL(`${fragment}/`, parentURL));
+		const asDirectory = yield* loadAsDirectory(fs, new URL(`${encodeFragment(fragment)}/`, parentURL));
 		if (asDirectory) {
 			return asDirectory;
 		}
@@ -92,15 +91,16 @@ function maybeDetectAndLoad(fs: FileSystemTask, file: URL) {
 // LOAD_AS_FILE(X)
 // X = parentURL + fragment
 function *loadAsFile(fs: FileSystemTask, fragment: string, parentURL: URL): Task<Resolution | undefined> {
+	const encodedFragment = encodeFragment(fragment);
 	// 1. If X is a file, load X as its file extension format. STOP
-	const asFile = new URL(fragment, parentURL);
-	if (yield* fs.fileExists(verbatimFileURLToPath(asFile))) {
+	const asFile = new URL(encodedFragment, parentURL);
+	if (yield* fs.fileExists(asFile)) {
 		return yield* loadWithFormat(fs, asFile);
 	}
 
 	// 2. If X.js is a file,
-	const asJsFile = new URL(`${fragment}.js`, parentURL);
-	if (yield* fs.fileExists(verbatimFileURLToPath(asJsFile))) {
+	const asJsFile = new URL(`${encodedFragment}.js`, parentURL);
+	if (yield* fs.fileExists(asJsFile)) {
 		// a. Find the closest package scope SCOPE to X.
 		const packageURL = yield* lookupPackageScope(fs, parentURL);
 		// b. If no scope was found
@@ -122,14 +122,14 @@ function *loadAsFile(fs: FileSystemTask, fragment: string, parentURL: URL): Task
 	}
 
 	// 3. If X.json is a file, parse X.json to a JavaScript Object. STOP
-	const asJsonFile = new URL(`${fragment}.json`, parentURL);
-	if (yield* fs.fileExists(verbatimFileURLToPath(asJsonFile))) {
-		return yield* loadWithFormat(fs, asJsonFile);
+	const asJsonFile = new URL(`${encodedFragment}.json`, parentURL);
+	if (yield* fs.fileExists(asJsonFile)) {
+		return { format: "json", url: asJsonFile };
 	}
 
 	// 4. If X.node is a file, load X.node as binary addon. STOP
-	const asNodeFile = new URL(`${fragment}.node`, parentURL);
-	if (yield* fs.fileExists(verbatimFileURLToPath(asNodeFile))) {
+	const asNodeFile = new URL(`${encodedFragment}.node`, parentURL);
+	if (yield* fs.fileExists(asNodeFile)) {
 		return { format: "builtin", url: asNodeFile };
 	}
 }
@@ -137,9 +137,10 @@ function *loadAsFile(fs: FileSystemTask, fragment: string, parentURL: URL): Task
 // LOAD_INDEX(X)
 // X = parentURL + fragment
 function *loadIndex(fs: FileSystemTask, fragment: string, parentURL: URL): Task<Resolution | undefined> {
+	const encodedFragment = encodeFragment(fragment);
 	// 1. If X/index.js is a file
-	const asJsIndex = new URL(`${fragment}/index.js`, parentURL);
-	if (yield* fs.fileExists(verbatimFileURLToPath(asJsIndex))) {
+	const asJsIndex = new URL(`${encodedFragment}/index.js`, parentURL);
+	if (yield* fs.fileExists(asJsIndex)) {
 		// a. Find the closest package scope SCOPE to X.
 		const packageURL = yield* lookupPackageScope(fs, parentURL);
 		// b. If no scope was found, load X/index.js as a CommonJS module. STOP.
@@ -158,14 +159,14 @@ function *loadIndex(fs: FileSystemTask, fragment: string, parentURL: URL): Task<
 	}
 
 	// 2. If X/index.json is a file, parse X/index.json to a JavaScript object. STOP
-	const asJsonIndex = new URL(`${fragment}/index.json`, parentURL);
-	if (yield* fs.fileExists(verbatimFileURLToPath(asJsonIndex))) {
-		return yield* loadWithFormat(fs, asJsonIndex);
+	const asJsonIndex = new URL(`${encodedFragment}/index.json`, parentURL);
+	if (yield* fs.fileExists(asJsonIndex)) {
+		return { format: "json", url: asJsonIndex };
 	}
 
 	// 3. If X/index.node is a file, load X/index.node as binary addon. STOP
-	const asNodeIndex = new URL(`${fragment}/index.node`, parentURL);
-	if (yield* fs.fileExists(verbatimFileURLToPath(asNodeIndex))) {
+	const asNodeIndex = new URL(`${encodedFragment}/index.node`, parentURL);
+	if (yield* fs.fileExists(asNodeIndex)) {
 		return { format: "addon", url: asNodeIndex };
 	}
 }
@@ -229,7 +230,7 @@ function *loadNodeModules(fs: FileSystemTask, fragment: string, parentURL: URL):
 		}
 
 		// c. LOAD_AS_DIRECTORY(DIR/X)
-		const asDirectory = yield* loadAsDirectory(fs, new URL(`${fragment}/`, dir));
+		const asDirectory = yield* loadAsDirectory(fs, new URL(`${encodeFragment(fragment)}/`, dir));
 		if (asDirectory) {
 			return asDirectory;
 		}
@@ -360,10 +361,8 @@ function *loadPackageSelf(fs: FileSystemTask, fragment: string, parentURL: URL):
 // RESOLVE_ESM_MATCH(MATCH)
 function *resolveEsmMatch(fs: FileSystemTask, match: URL): Task<Resolution> {
 	// 1. let RESOLVED_PATH = fileURLToPath(MATCH)
-	const resolvedPath = verbatimFileURLToPath(match);
-
 	// 2. If the file at RESOLVED_PATH exists, load RESOLVED_PATH as its extension format. STOP
-	if (yield* fs.fileExists(resolvedPath)) {
+	if (yield* fs.fileExists(match)) {
 		return yield* loadWithFormat(fs, match);
 	}
 
@@ -371,8 +370,19 @@ function *resolveEsmMatch(fs: FileSystemTask, match: URL): Task<Resolution> {
 	throw new Error("not found");
 }
 
-// nb: We use URLs for the path traversal convenience, but `require("./file.cjs?")` should be read
-// as-is.
-function verbatimFileURLToPath(url: URL) {
-	return `${url.pathname}${url.search}${url.hash}`;
+/**
+ * CommonJS resolves based on file names, but ESM is URL-native. This function encodes a `require`
+ * specifier as a URL fragment in a way that file names will be preserved through `URL`.
+ */
+function encodeFragment(fragment: string) {
+	const encodeOneCharacter = (char: string) => `%${char.charCodeAt(0).toString(16)}`;
+	const encodeOneOrMoreCharacters = (string: string) => string.length === 1
+		? encodeOneCharacter(string)
+		: string.replace(/[^]/g, encodeOneCharacter);
+	// See: https://url.spec.whatwg.org/#concept-basic-url-parser
+	// "Remove any leading and trailing C0 control or space from input."
+	// "Remove all ASCII tab or newline from input."
+	// Therefore: Leading control characters must be encoded, as well as newlines and tabs, and %'s
+	// of course.
+	return fragment.replace(/^[\x00-\x20%]+|[\r\n\t%]/g, encodeOneOrMoreCharacters);
 }
