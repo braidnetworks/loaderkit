@@ -5,6 +5,8 @@ import { begin, expect, task } from "@braidai/lang/task/task";
 import { makeFileSystemAsyncAdapter, makeFileSystemSyncAdapter } from "./adapter.js";
 import { nodeCoreModules } from "./node-modules.js";
 
+// https://nodejs.org/api/esm.html#resolution-and-loading-algorithm
+
 export interface Resolution {
 	format: ModuleFormat | "addon" | undefined;
 	url: URL;
@@ -34,19 +36,25 @@ function *resolver(fs: FileSystemTask, specifier: string, parentURL: URL): Task<
 		// 3. Otherwise, if specifier starts with "/", "./", or "../", then
 		//   1. Set resolved to the URL resolution of specifier relative to parentURL.
 		if (/^(\/|\.\.?\/)/.test(specifier)) {
-			return new URL(specifier, parentURL);
+			return yield* resolveFileLinks(fs, new URL(specifier, parentURL));
 		}
 
 		// 4. Otherwise, if specifier starts with "#", then
 		//   1. Set resolved to the result of PACKAGE_IMPORTS_RESOLVE(specifier, parentURL, defaultConditions).
 		if (specifier.startsWith("#")) {
-			return yield* packageImportsResolve(fs, specifier, parentURL, defaultConditions);
+			const resolved = yield* packageImportsResolve(fs, specifier, parentURL, defaultConditions);
+			return yield* resolveFileLinks(fs, resolved);
 		}
 
 		// 5. Otherwise,
 		//   1. Note: specifier is now a bare specifier.
 		//   2. Set resolved the result of PACKAGE_RESOLVE(specifier, parentURL).
-		return yield* packageResolve(fs, specifier, parentURL);
+		const resolved = yield* packageResolve(fs, specifier, parentURL);
+		if (resolved.protocol === "node:") {
+			return resolved;
+		} else {
+			return yield* resolveFileLinks(fs, resolved);
+		}
 	}();
 
 	// 6. Let format be undefined.
@@ -88,57 +96,24 @@ function *resolver(fs: FileSystemTask, specifier: string, parentURL: URL): Task<
 }
 
 // PACKAGE_RESOLVE(packageSpecifier, parentURL)
-function *packageResolve(fs: FileSystemTask, packageSpecifier: string, parentURL_: URL): Task<URL> {
-	let parentURL = parentURL_;
-
-	// 1. Let packageName be undefined.
-	// 2. If packageSpecifier is an empty string, then
-	if (packageSpecifier === "") {
-		// 1. Throw an Invalid Module Specifier error.
-		throw new Error("Invalid Module Specifier");
-	}
-
+function *packageResolve(fs: FileSystemTask, packageSpecifier: string, parentURL: URL): Task<URL> {
 	// 3. If packageSpecifier is a Node.js builtin module name, then
 	if (nodeCoreModules.includes(packageSpecifier)) {
 		// 1. Return the string "node:" concatenated with packageSpecifier.
 		return new URL(`node:${packageSpecifier}`);
 	}
 
-	const packageName = function() {
-		// 4. If packageSpecifier does not start with "@", then
-		if (!packageSpecifier.startsWith("@")) {
-			// 1. Set packageName to the substring of packageSpecifier until the first "/" separator or
-			//    the end of the string.
-			return packageSpecifier.split("/")[0]!;
-		}
-
-		// 5. Otherwise,
-		const matches = /^([^/]*\/[^/]*)/.exec(packageSpecifier);
-		//   1. If packageSpecifier does not contain a "/" separator, then
-		if (matches === null) {
-			// 1. Throw an Invalid Module Specifier error.
-			throw new Error("Invalid Module Specifier");
-		}
-		// 2. Set packageName to the substring of packageSpecifier until the second "/" separator or the
-		//    end of the string.
-		return matches[1]!;
-	}();
-
-	// 6. If packageName starts with "." or contains "\" or "%", then
-	if (packageName.startsWith(".") || packageName.includes("\\") || packageName.includes("%")) {
-		// 1. Throw an Invalid Module Specifier error.
+	// [Steps 1-2, 4-6, 8 continued in `extractNameAndSubpath`]
+	const nameAndSubPath = extractNameAndSubpath(packageSpecifier);
+	if (!nameAndSubPath) {
+		// [combined] Throw an Invalid Module Specifier error.
 		throw new Error("Invalid Module Specifier");
 	}
+	const packageName = nameAndSubPath.name;
 
 	// 7. Let packageSubpath be "." concatenated with the substring of packageSpecifier from the
 	//    position at the length of packageName.
-	const packageSubpath = `.${packageSpecifier.substring(packageName.length)}`;
-
-	// 8. If packageSubpath ends in "/", then
-	if (packageSubpath.endsWith("/")) {
-		// 1. Throw an Invalid Module Specifier error.
-		throw new Error("Invalid Module Specifier");
-	}
+	const packageSubpath = `.${nameAndSubPath.subpath}`;
 
 	// 9. Let selfUrl be the result of PACKAGE_SELF_RESOLVE(packageName, packageSubpath, parentURL).
 	const selfUrl = yield* packageSelfResolve(fs, packageName, packageSubpath, parentURL);
@@ -149,15 +124,16 @@ function *packageResolve(fs: FileSystemTask, packageSpecifier: string, parentURL
 	}
 
 	// 11. While parentURL is not the file system root,
-	// nb: Modified to search up to "root"
+	const sentinel = new URL(`/node_modules/${packageName}/`, parentURL);
+	let packageURL;
 	do {
 		// 1. Let packageURL be the URL resolution of "node_modules/" concatenated with
 		//    packageSpecifier, relative to parentURL.
 		// nb: Specification error! It is `packageName`.
-		const packageURL = new URL(`node_modules/${packageName}/`, parentURL);
+		packageURL = new URL(`node_modules/${packageName}/`, parentURL);
 
 		// 2. Set parentURL to the parent folder URL of parentURL.
-		parentURL = new URL("../", parentURL);
+		parentURL = new URL("..", parentURL);
 
 		// 3. If the folder at packageURL does not exist, then
 		if (!(yield* fs.directoryExists(packageURL))) {
@@ -170,6 +146,7 @@ function *packageResolve(fs: FileSystemTask, packageSpecifier: string, parentURL
 
 		// 5. If pjson is not null and pjson.exports is not null or undefined, then
 		if (pjson?.exports != null) {
+			packageURL = yield* resolveDirectoryLinks(fs, packageURL);
 			// 1. Return the result of PACKAGE_EXPORTS_RESOLVE(packageURL, packageSubpath, pjson.exports,
 			//    defaultConditions).
 			return yield* packageExportsResolve(fs, packageURL, packageSubpath, pjson.exports, defaultConditions);
@@ -177,6 +154,8 @@ function *packageResolve(fs: FileSystemTask, packageSpecifier: string, parentURL
 
 		// 6. Otherwise, if packageSubpath is equal to ".", then
 		if (packageSubpath === ".") {
+			packageURL = yield* resolveDirectoryLinks(fs, packageURL);
+
 			// 1. If pjson.main is a string, then
 			if (typeof pjson?.main === "string") {
 				// 1. Return the URL resolution of main in packageURL.
@@ -187,7 +166,7 @@ function *packageResolve(fs: FileSystemTask, packageSpecifier: string, parentURL
 			//   1. Return the URL resolution of packageSubpath in packageURL.
 			return new URL(packageSubpath, packageURL);
 		}
-	} while (parentURL.pathname !== "/");
+	} while (packageURL.href !== sentinel.href);
 
 	// 12. Throw a Module Not Found error
 	throw new Error("Module Not Found");
@@ -657,33 +636,32 @@ export function *esmFileFormat(fs: FileSystemTask, url: URL): Task<ModuleFormat 
 // LOOKUP_PACKAGE_SCOPE(url)
 /** @internal */
 export function *lookupPackageScope(fs: FileSystemTask, url: URL): Task<URL | null> {
-	if (url.protocol !== "file:") {
-		return null;
-	}
-
 	// 1. Let scopeURL be url.
 	let scopeURL = url;
 
 	// 2. While scopeURL is not the file system root,
-	// nb: Modified to search to include "root", also for "parent URL" operation.
-	do {
-		// 2. If scopeURL ends in a "node_modules" path segment, return null.
-		if (scopeURL.pathname.endsWith("/node_modules/")) {
-			return null;
-		}
-
+	const sentinel = new URL("/package.json", url);
+	while (true) {
 		// 3. Let pjsonURL be the resolution of "package.json" within scopeURL.
 		const pjsonURL = new URL("package.json", scopeURL);
 
 		// 4. if the file at pjsonURL exists, then
 		if (yield* fs.fileExists(pjsonURL)) {
 			// 1. Return scopeURL.
-			return scopeURL;
+			return new URL(".", scopeURL);
 		}
 
 		// 1. Set scopeURL to the parent URL of scopeURL.
-		scopeURL = new URL("../", scopeURL);
-	} while (scopeURL.pathname !== "/");
+		if (scopeURL.href === sentinel.href) {
+			break;
+		}
+		scopeURL = new URL("../package.json", scopeURL);
+
+		// 2. If scopeURL ends in a "node_modules" path segment, return null.
+		if (scopeURL.pathname.endsWith("/node_modules/package.json")) {
+			return null;
+		}
+	}
 
 	// 3. Return null.
 	return null;
@@ -724,4 +702,118 @@ function detectModuleSyntax(fs: FileSystemTask, source: string) {
 
 	// nb: Haha, yeah right
 	return false;
+}
+
+/**
+ * Extracts name and subpath from a `@name/name/subpath` or `name/subpath` specifier.
+ */
+export function extractNameAndSubpath(packageSpecifier: string) {
+	// From: PACKAGE_RESOLVE
+	// 1. Let packageName be undefined.
+	const name = function() {
+		// 2. If packageSpecifier is an empty string, then
+		if (packageSpecifier === "") {
+			// 1. Throw an Invalid Module Specifier error.
+			return;
+		}
+
+		// 3. If packageSpecifier is a Node.js builtin module name, then
+		// [Omitted]
+
+		if (packageSpecifier.startsWith("@")) {
+			// 5. Otherwise,
+			//   1. If packageSpecifier does not contain a "/" separator, then
+			let slash = packageSpecifier.indexOf("/");
+			slash = slash === -1 ? slash : packageSpecifier.indexOf("/", slash + 1);
+			if (slash === -1) {
+				// 1. Throw an Invalid Module Specifier error.
+				return;
+			}
+			// 2. Set packageName to the substring of packageSpecifier until the second "/" separator or the
+			//    end of the string.
+			return packageSpecifier.slice(0, slash);
+		} else {
+			// 4. If packageSpecifier does not start with "@", then
+			//   1. Set packageName to the substring of packageSpecifier until the first "/"
+			//      separator or the end of the string.
+			const slash = packageSpecifier.indexOf("/");
+			return slash === -1 ? packageSpecifier : packageSpecifier.slice(0, slash);
+		}
+	}();
+	if (name === undefined) {
+		return;
+	}
+
+	// 6. If packageName starts with "." or contains "\" or "%", then
+	if (name.startsWith(".") || name.includes("\\") || name.includes("%")) {
+		// 1. Throw an Invalid Module Specifier error.
+		return;
+	}
+
+	// 7. Let packageSubpath be "." concatenated with the substring of packageSpecifier from the
+	//    position at the length of packageName.
+	// nb: "." omitted
+	const subpath = packageSpecifier.substring(name.length);
+
+	// 8. If packageSubpath ends in "/", then
+	if (subpath.endsWith("/")) {
+		// 1. Throw an Invalid Module Specifier error.
+		return;
+	}
+
+	return { name, subpath };
+}
+
+function makeDetectCycle() {
+	const seen = new Set<string>();
+	return (url: URL) => {
+		const { href } = url;
+		if (seen.has(href)) {
+			throw new Error("Circular Link");
+		}
+		seen.add(href);
+	};
+}
+
+/** @internal */
+export function *resolveFileLinks(fs: FileSystemTask, path: URL): Task<URL> {
+	if (!fs.readLink) {
+		return path;
+	}
+	const detectCycle = makeDetectCycle();
+	const read = function*(url: URL): Task<URL> {
+		detectCycle(url);
+		const link = yield* fs.readLink!(url);
+		if (link === undefined) {
+			return url;
+		} else {
+			return yield* read(new URL(link, url));
+		}
+	};
+	return yield* read(path);
+}
+
+/** @internal */
+export function *resolveDirectoryLinks(fs: FileSystemTask, path: URL): Task<URL> {
+	if (!fs.readLink) {
+		return path;
+	}
+	const detectCycle = makeDetectCycle();
+	const read = function*(url: URL): Task<URL> {
+		detectCycle(url);
+		const link = yield* fs.readLink!(new URL(url.pathname.slice(0, -1), url));
+		if (link === undefined) {
+			return url;
+		} else if (link === "/") {
+			return yield* read(new URL("/", url));
+		} else if (link.endsWith("..")) {
+			// `readlink` will never return a trailing slash (except for a root link), but the URL
+			// constructor will insert a trailing slash given ".", "..", etc. So this branch does
+			// not need a trailing slash.
+			return yield* read(new URL(`../${link}`, url));
+		} else {
+			return yield* read(new URL(`../${link}/`, url));
+		}
+	};
+	return yield* read(path);
 }

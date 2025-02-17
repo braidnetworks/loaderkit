@@ -3,8 +3,10 @@ import type { FileSystemAsync, FileSystemSync, FileSystemTask } from "./fs.js";
 import type { Task } from "@braidai/lang/task/utility";
 import { begin, expect, task } from "@braidai/lang/task/task";
 import { makeFileSystemAsyncAdapter, makeFileSystemSyncAdapter } from "./adapter.js";
-import { esmFileFormat, lookupPackageScope, packageExportsResolve, packageImportsResolve, readPackageJson } from "./esm.js";
+import { esmFileFormat, extractNameAndSubpath, lookupPackageScope, packageExportsResolve, packageImportsResolve, readPackageJson, resolveDirectoryLinks, resolveFileLinks } from "./esm.js";
 import { nodeCoreModules } from "./node-modules.js";
+
+// https://nodejs.org/api/modules.html#all-together
 
 const defaultConditions = [ "node", "require" ];
 
@@ -55,20 +57,20 @@ function *resolver(fs: FileSystemTask, fragment: string, parentURL: URL): Task<R
 	// 4. If X begins with '#'
 	if (fragment.startsWith("#")) {
 		// a. LOAD_PACKAGE_IMPORTS(X, dirname(Y))
-		const asPackageImports = yield* loadPackageImports(fs, fragment, new URL("./", parentURL));
+		const asPackageImports = yield* loadPackageImports(fs, fragment, new URL(".", parentURL));
 		if (asPackageImports) {
 			return asPackageImports;
 		}
 	}
 
 	// 5. LOAD_PACKAGE_SELF(X, dirname(Y))
-	const asSelf = yield* loadPackageSelf(fs, fragment, new URL("./", parentURL));
+	const asSelf = yield* loadPackageSelf(fs, fragment, new URL(".", parentURL));
 	if (asSelf) {
 		return asSelf;
 	}
 
 	// 6. LOAD_NODE_MODULES(X, dirname(Y))
-	const asNodeModules = yield* loadNodeModules(fs, fragment, new URL("./", parentURL));
+	const asNodeModules = yield* loadNodeModules(fs, fragment, new URL(".", parentURL));
 	if (asNodeModules) {
 		return asNodeModules;
 	}
@@ -95,42 +97,46 @@ function *loadAsFile(fs: FileSystemTask, fragment: string, parentURL: URL): Task
 	// 1. If X is a file, load X as its file extension format. STOP
 	const asFile = new URL(encodedFragment, parentURL);
 	if (yield* fs.fileExists(asFile)) {
-		return yield* loadWithFormat(fs, asFile);
+		const realname = yield* resolveFileLinks(fs, asFile);
+		return yield* loadWithFormat(fs, realname);
 	}
 
 	// 2. If X.js is a file,
 	const asJsFile = new URL(`${encodedFragment}.js`, parentURL);
 	if (yield* fs.fileExists(asJsFile)) {
+		const realname = yield* resolveFileLinks(fs, asJsFile);
 		// a. Find the closest package scope SCOPE to X.
 		const packageURL = yield* lookupPackageScope(fs, parentURL);
 		// b. If no scope was found
 		if (packageURL === null) {
 			// 1. MAYBE_DETECT_AND_LOAD(X.js)
-			return yield* maybeDetectAndLoad(fs, asJsFile);
+			return yield* maybeDetectAndLoad(fs, realname);
 		}
 		// c. If the SCOPE/package.json contains "type" field,
 		const pjson = yield* readPackageJson(fs, packageURL);
 		if (pjson?.type === "module") {
 			//   1. If the "type" field is "module", load X.js as an ECMAScript module. STOP.
-			return { format: "module", url: asJsFile };
+			return { format: "module", url: realname };
 		} else if (pjson?.type === "commonjs") {
 			// 2. If the "type" field is "commonjs", load X.js as an CommonJS module. STOP.
-			return { format: "commonjs", url: asJsFile };
+			return { format: "commonjs", url: realname };
 		}
 		// d. MAYBE_DETECT_AND_LOAD(X.js)
-		return yield* maybeDetectAndLoad(fs, asJsFile);
+		return yield* maybeDetectAndLoad(fs, realname);
 	}
 
 	// 3. If X.json is a file, parse X.json to a JavaScript Object. STOP
 	const asJsonFile = new URL(`${encodedFragment}.json`, parentURL);
 	if (yield* fs.fileExists(asJsonFile)) {
-		return { format: "json", url: asJsonFile };
+		const realname = yield* resolveFileLinks(fs, asJsonFile);
+		return { format: "json", url: realname };
 	}
 
 	// 4. If X.node is a file, load X.node as binary addon. STOP
 	const asNodeFile = new URL(`${encodedFragment}.node`, parentURL);
 	if (yield* fs.fileExists(asNodeFile)) {
-		return { format: "builtin", url: asNodeFile };
+		const realname = yield* resolveFileLinks(fs, asNodeFile);
+		return { format: "builtin", url: realname };
 	}
 }
 
@@ -141,33 +147,36 @@ function *loadIndex(fs: FileSystemTask, fragment: string, parentURL: URL): Task<
 	// 1. If X/index.js is a file
 	const asJsIndex = new URL(`${encodedFragment}/index.js`, parentURL);
 	if (yield* fs.fileExists(asJsIndex)) {
+		const realname = yield* resolveFileLinks(fs, asJsIndex);
 		// a. Find the closest package scope SCOPE to X.
 		const packageURL = yield* lookupPackageScope(fs, parentURL);
 		// b. If no scope was found, load X/index.js as a CommonJS module. STOP.
 		if (packageURL === null) {
-			return { format: "commonjs", url: asJsIndex };
+			return { format: "commonjs", url: realname };
 		}
 		// c. If the SCOPE/package.json contains "type" field,
 		const pjson = yield* readPackageJson(fs, packageURL);
 		if (pjson?.type === "module") {
 			// 1. If the "type" field is "module", load X/index.js as an ECMAScript module. STOP.
-			return { format: "module", url: asJsIndex };
+			return { format: "module", url: realname };
 		} else {
 			// 2. Else, load X/index.js as an CommonJS module. STOP.
-			return { format: "commonjs", url: asJsIndex };
+			return { format: "commonjs", url: realname };
 		}
 	}
 
 	// 2. If X/index.json is a file, parse X/index.json to a JavaScript object. STOP
 	const asJsonIndex = new URL(`${encodedFragment}/index.json`, parentURL);
 	if (yield* fs.fileExists(asJsonIndex)) {
-		return { format: "json", url: asJsonIndex };
+		const realname = yield* resolveFileLinks(fs, asJsonIndex);
+		return { format: "json", url: realname };
 	}
 
 	// 3. If X/index.node is a file, load X/index.node as binary addon. STOP
 	const asNodeIndex = new URL(`${encodedFragment}/index.node`, parentURL);
 	if (yield* fs.fileExists(asNodeIndex)) {
-		return { format: "addon", url: asNodeIndex };
+		const realname = yield* resolveFileLinks(fs, asNodeIndex);
+		return { format: "addon", url: realname };
 	}
 }
 
@@ -214,23 +223,36 @@ function *loadWithFormat(fs: FileSystemTask, url: URL): Task<Resolution> {
 
 // LOAD_NODE_MODULES(X, START)
 function *loadNodeModules(fs: FileSystemTask, fragment: string, parentURL: URL): Task<Resolution | undefined> {
+	const parts = extractNameAndSubpath(fragment);
+	if (!parts) {
+		return;
+	}
+	const subpathFragment = parts.subpath.slice(1);
+
 	// 1. let DIRS = NODE_MODULES_PATHS(START)
 	// 2. for each DIR in DIRS:
 	for (const dir of nodeModulesPaths(parentURL)) {
+		// Not specified, but crucial for performance in CJS graphs. Otherwise the following
+		// branches check a ton of files that will never exist.
+		if (!(yield* fs.directoryExists(dir))) {
+			continue;
+		}
+		const realname = yield* resolveDirectoryLinks(fs, new URL(encodeFragment(`${parts.name}/`), dir));
+
 		// a. LOAD_PACKAGE_EXPORTS(X, DIR)
-		const asPackageExports = yield* loadPackageExports(fs, fragment, dir);
+		const asPackageExports = yield* loadPackageExports(fs, parts.subpath, realname);
 		if (asPackageExports) {
 			return asPackageExports;
 		}
 
 		// b. LOAD_AS_FILE(DIR/X)
-		const asFile = yield* loadAsFile(fs, fragment, dir);
+		const asFile = yield* loadAsFile(fs, subpathFragment, realname);
 		if (asFile) {
 			return asFile;
 		}
 
 		// c. LOAD_AS_DIRECTORY(DIR/X)
-		const asDirectory = yield* loadAsDirectory(fs, new URL(`${encodeFragment(fragment)}/`, dir));
+		const asDirectory = yield* loadAsDirectory(fs, new URL(`${encodeFragment(subpathFragment)}/`, realname));
 		if (asDirectory) {
 			return asDirectory;
 		}
@@ -243,19 +265,17 @@ function *nodeModulesPaths(path: URL) {
 	// 2. let I = count of PARTS - 1
 	// 3. let DIRS = []
 	// 4. while I >= 0,
-	if (path.protocol !== "file:") {
-		return;
-	}
+	const sentinel = new URL("/", path);
 	do {
 		// a. if PARTS[I] = "node_modules", GOTO d.
 		if (!path.pathname.endsWith("/node_modules/")) {
 			// b. DIR = path join(PARTS[0 .. I] + "node_modules")
 			// c. DIRS = DIR + DIRS
-			yield new URL("./node_modules/", path);
+			yield new URL("node_modules/", path);
 		}
 		// d. let I = I - 1
-		path = new URL("../", path);
-	} while (path.pathname !== "/");
+		path = new URL("..", path);
+	} while (path.href !== sentinel.href);
 	// 5. return DIRS + GLOBAL_FOLDERS
 }
 
@@ -288,21 +308,10 @@ function *loadPackageImports(fs: FileSystemTask, fragment: string, parentURL: UR
 }
 
 // LOAD_PACKAGE_EXPORTS(X, DIR)
-function *loadPackageExports(fs: FileSystemTask, fragment: string, parentURL: URL): Task<Resolution | undefined> {
-	// 1. Try to interpret X as a combination of NAME and SUBPATH where the name
-	//    may have a @scope/ prefix and the subpath begins with a slash (`/`).
-	const matches = /^((?:@[^/]+\/)?[^/]+)(.*)$/.exec(fragment);
-
-	// 2. If X does not match this pattern or DIR/NAME/package.json is not a file,
-	//    return.
-	if (matches === null) {
-		return;
-	}
-	const dir = new URL(`${matches[1]}/`, parentURL);
-	const subpath = matches[2];
+function *loadPackageExports(fs: FileSystemTask, subpath: string, parentURL: URL): Task<Resolution | undefined> {
 
 	// 3. Parse DIR/NAME/package.json, and look for "exports" field.
-	const pjson = yield* readPackageJson(fs, dir);
+	const pjson = yield* readPackageJson(fs, parentURL);
 	if (pjson === null) {
 		return;
 	}
@@ -320,7 +329,7 @@ function *loadPackageExports(fs: FileSystemTask, fragment: string, parentURL: UR
 
 	// 6. let MATCH = PACKAGE_EXPORTS_RESOLVE(pathToFileURL(DIR/NAME), "." + SUBPATH, `package.json`
 	//    "exports", CONDITIONS) defined in the ESM resolver.
-	const match = yield* packageExportsResolve(fs, dir, `.${subpath}`, pjson.exports, conditions);
+	const match = yield* packageExportsResolve(fs, parentURL, `.${subpath}`, pjson.exports, conditions);
 
 	// 7. RESOLVE_ESM_MATCH(MATCH)
 	return yield* resolveEsmMatch(fs, match);
@@ -363,7 +372,8 @@ function *resolveEsmMatch(fs: FileSystemTask, match: URL): Task<Resolution> {
 	// 1. let RESOLVED_PATH = fileURLToPath(MATCH)
 	// 2. If the file at RESOLVED_PATH exists, load RESOLVED_PATH as its extension format. STOP
 	if (yield* fs.fileExists(match)) {
-		return yield* loadWithFormat(fs, match);
+		const realname = yield* resolveFileLinks(fs, match);
+		return yield* loadWithFormat(fs, realname);
 	}
 
 	// 3. THROW "not found"
