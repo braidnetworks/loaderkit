@@ -1,8 +1,14 @@
 {
 	"compilerOptions": {
+		// Enable `-b`
+		"composite": true,
+
+		// Sources
+		"rootDir": "${configDir}",
+		"outDir": "${configDir}/dist",
+
 		// Language & emit settings
 		"checkJs": true,
-		"composite": true,
 		"declarationMap": true,
 		"isolatedModules": true,
 		"module": "nodenext",

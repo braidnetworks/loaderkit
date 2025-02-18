@@ -1,3 +1,4 @@
 *
 !dist/**/*
+dist/__tests__
 tsconfig.tsbuildinfo
