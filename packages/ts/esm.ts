@@ -3,7 +3,7 @@ import type { FileSystemAsync } from "@loaderkit/resolve/fs";
 import type { LoadHook, ResolveHook } from "node:module";
 import * as assert from "node:assert/strict";
 import { resolve as cjsResolve } from "@loaderkit/resolve/cjs";
-import { resolve as esmResolve, extractNameAndSubpath } from "@loaderkit/resolve/esm";
+import { resolve as esmResolve } from "@loaderkit/resolve/esm";
 import { transpileSource } from "./utility/esbuild.js";
 import { makeResolveTypeScriptPackage, resolveFormat, resolvePackage } from "./utility/scope.js";
 import { absoluteJavaScriptToTypeScript, absoluteTypeScriptToJavaScript, outputToSourceCandidates, sourceToOutput, testAnyJavaScript, testAnyScript, testAnyTypeScript } from "./utility/translate.js";
@@ -266,8 +266,7 @@ export function makeResolveAndLoad(underlyingFileSystem: LoaderFileSystem) {
 			}
 
 			// Check for .ts import from non-bundler projects
-			const checkSubpath = extractNameAndSubpath(specifier)?.subpath ?? specifier;
-			if (testAnyTypeScript.test(checkSubpath.replace(/[#?].+/, "")) && tsConfig?.locations.outputBase) {
+			if (testAnyTypeScript.test(specifier.replace(/[#?].+/, "")) && tsConfig?.locations.outputBase) {
 				throw new Error(`Cannot import TypeScript specifier '${specifier}' with TypeScript output artifacts enabled.`);
 			}
 

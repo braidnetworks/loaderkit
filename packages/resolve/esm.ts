@@ -428,11 +428,11 @@ function *packageTargetResolve(
 			// 2. If patternMatch is a String, then
 			if (patternMatch === null) {
 				// 3. Return PACKAGE_RESOLVE(target, packageURL + "/").
-				return yield* packageResolve(fs, target, new URL(`${packageURL}/`));
+				return yield* packageResolve(fs, target, new URL(`${packageURL.href}/`));
 			} else {
 				// 1. Return PACKAGE_RESOLVE(target with every instance of "*" replaced by patternMatch,
 				//    packageURL + "/").
-				return yield* packageResolve(fs, target.replaceAll("*", patternMatch), new URL(`${packageURL}/`));
+				return yield* packageResolve(fs, target.replaceAll("*", patternMatch), new URL(`${packageURL.href}/`));
 			}
 		}
 
@@ -706,6 +706,7 @@ function detectModuleSyntax(fs: FileSystemTask, source: string) {
 
 /**
  * Extracts name and subpath from a `@name/name/subpath` or `name/subpath` specifier.
+ * @internal
  */
 export function extractNameAndSubpath(packageSpecifier: string) {
 	// From: PACKAGE_RESOLVE

@@ -11,7 +11,8 @@
 		"#ts/*": "./dist/*.js"
 	},
 	"scripts": {
-		"prepare": "rm -rf dist; npx tsc -b",
+		"clean": "rm -rf dist",
+		"prepare": "npm run -s clean; npx tsc -b",
 		"test": "node --no-warnings --experimental-vm-modules --enable-source-maps --test-reporter=spec --test 'dist/__tests__/**/*.js'"
 	},
 	"dependencies": {

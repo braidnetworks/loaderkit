@@ -2,7 +2,7 @@ import type { FileSystemAsync, FileSystemSync, FileSystemTask } from "./fs.js";
 import type { Task } from "@braidai/lang/task/utility";
 import { accept } from "@braidai/lang/task/utility";
 
-export function makeTestFileSystem(files: Record<string, string>) {
+export function makeTestFileSystem(files: Record<string, string>): FileSystemSync {
 	const checkProto = (url: URL) => {
 		if (url.protocol !== "file:") {
 			throw new Error(`Unsupported protocol: ${url.protocol}`);

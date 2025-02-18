@@ -1,4 +1,6 @@
 {
+	"editor.detectIndentation": true,
+	"editor.insertSpaces": false,
 	"editor.rulers": [
 		// Comments wrap to 100
 		{ "column": 100, "color": "#0000" },

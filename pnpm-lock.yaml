@@ -29,9 +29,6 @@ importers:
       '@braidai/lang':
         specifier: ^1.0.0
         version: 1.0.0
-      '@loaderkit/resolve':
-        specifier: workspace:*
-        version: 'link:'
 
   packages/ts:
     dependencies:

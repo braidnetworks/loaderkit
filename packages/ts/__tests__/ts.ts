@@ -97,7 +97,7 @@ await describe("transpilation options", async () => {
 });
 
 await test("allowJs enabled", async () => {
-	const { evaluate, resolve } = makeTestLoader({
+	const { evaluate } = makeTestLoader({
 		"package.json": JSON.stringify({ type: "module" }),
 		"tsconfig.json": JSON.stringify({
 			compilerOptions: {

@@ -1,4 +1,5 @@
 // Object.keys(process.binding("natives")).filter(name => !/^(?:_|internal\/)/.test(name))
+/** @internal */
 export const nodeCoreModules = [
 	"assert",
 	"assert/strict",

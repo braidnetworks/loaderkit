@@ -44,7 +44,7 @@ export async function transpileSource(
 		if (isBuildFailure(cause)) {
 			const message = cause.errors[0]!;
 			const location = message.location === null ? "" : `:${message.location.line}:${message.location.column}`;
-			const stack = `SyntaxError: ${message.text}\n    at (${sourceLocation}${location})`;
+			const stack = `SyntaxError: ${message.text}\n    at (${sourceLocation.href}${location})`;
 			throw Object.assign(new SyntaxError(message.text, { cause }), { stack });
 		} else {
 			throw cause;

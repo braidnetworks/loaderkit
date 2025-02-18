@@ -4,6 +4,7 @@
 	"type": "module",
 	"version": "1.0.0",
 	"scripts": {
+		"clean": "pnpm run -r clean",
 		"lint": "eslint --max-warnings=0 --report-unused-disable-directives .",
 		"prepare": "npx tsc -b"
 	},

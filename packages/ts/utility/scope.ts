@@ -135,6 +135,7 @@ export async function resolvePackage(fs: FileSystemAsync, fileOrDirectory: URL) 
  * `tsconfig.json` locator. It returns the flattened configuration taking `extends` causes into
  * account, and expanding relative paths. It also returns a directory mapping which is used to
  * map virtual `.js` back and forth to the underlying `.ts` sources.
+ * @internal
  */
 export function makeResolveTypeScriptPackage(fs: LoaderFileSystem) {
 	const makeLocation = (fragment: string, relativeToFile: URL) => {
