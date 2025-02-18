@@ -12,6 +12,7 @@ const defaultConditions = [ "node", "require" ];
 const defaultExtensions = [ ".js", ".json", ".node" ];
 
 interface ContextCJS {
+	conditions?: readonly string[];
 	extensions?: readonly string[];
 }
 
@@ -62,22 +63,23 @@ function *resolver(fs: FileSystemTask, fragment: string, parentURL: URL, context
 	}
 
 	// 4. If X begins with '#'
+	const conditions = context?.conditions ?? defaultConditions;
 	if (fragment.startsWith("#")) {
 		// a. LOAD_PACKAGE_IMPORTS(X, dirname(Y))
-		const asPackageImports = yield* loadPackageImports(fs, fragment, new URL(".", parentURL));
+		const asPackageImports = yield* loadPackageImports(fs, fragment, new URL(".", parentURL), conditions);
 		if (asPackageImports) {
 			return asPackageImports;
 		}
 	}
 
 	// 5. LOAD_PACKAGE_SELF(X, dirname(Y))
-	const asSelf = yield* loadPackageSelf(fs, fragment, new URL(".", parentURL));
+	const asSelf = yield* loadPackageSelf(fs, fragment, new URL(".", parentURL), conditions);
 	if (asSelf) {
 		return asSelf;
 	}
 
 	// 6. LOAD_NODE_MODULES(X, dirname(Y))
-	const asNodeModules = yield* loadNodeModules(fs, fragment, new URL(".", parentURL), extensions);
+	const asNodeModules = yield* loadNodeModules(fs, fragment, new URL(".", parentURL), context);
 	if (asNodeModules) {
 		return asNodeModules;
 	}
@@ -237,12 +239,14 @@ function *loadWithFormat(fs: FileSystemTask, url: URL): Task<Resolution> {
 }
 
 // LOAD_NODE_MODULES(X, START)
-function *loadNodeModules(fs: FileSystemTask, fragment: string, parentURL: URL, extensions: readonly string[]): Task<Resolution | undefined> {
+function *loadNodeModules(fs: FileSystemTask, fragment: string, parentURL: URL, context: ContextCJS | undefined): Task<Resolution | undefined> {
 	const parts = extractNameAndSubpath(fragment);
 	if (!parts) {
 		return;
 	}
 	const subpathFragment = parts.subpath.slice(1);
+	const conditions = context?.conditions ?? defaultConditions;
+	const extensions = context?.extensions ?? defaultExtensions;
 
 	// 1. let DIRS = NODE_MODULES_PATHS(START)
 	// 2. for each DIR in DIRS:
@@ -255,7 +259,7 @@ function *loadNodeModules(fs: FileSystemTask, fragment: string, parentURL: URL, 
 		const realname = yield* resolveDirectoryLinks(fs, new URL(encodeFragment(`${parts.name}/`), dir));
 
 		// a. LOAD_PACKAGE_EXPORTS(X, DIR)
-		const asPackageExports = yield* loadPackageExports(fs, parts.subpath, realname);
+		const asPackageExports = yield* loadPackageExports(fs, parts.subpath, realname, conditions);
 		if (asPackageExports) {
 			return asPackageExports;
 		}
@@ -295,7 +299,7 @@ function *nodeModulesPaths(path: URL) {
 }
 
 // LOAD_PACKAGE_IMPORTS(X, DIR)
-function *loadPackageImports(fs: FileSystemTask, fragment: string, parentURL: URL): Task<Resolution | undefined> {
+function *loadPackageImports(fs: FileSystemTask, fragment: string, parentURL: URL, conditions: readonly string[]): Task<Resolution | undefined> {
 	// 1. Find the closest package scope SCOPE to DIR.
 	const packageURL = yield* lookupPackageScope(fs, parentURL);
 
@@ -316,14 +320,14 @@ function *loadPackageImports(fs: FileSystemTask, fragment: string, parentURL: UR
 	// nb: Omitted
 
 	// 5. let MATCH = PACKAGE_IMPORTS_RESOLVE(X, pathToFileURL(SCOPE), CONDITIONS) [defined in the ESM resolver]
-	const match = yield* packageImportsResolve(fs, fragment, packageURL, [ "node", "require" ]);
+	const match = yield* packageImportsResolve(fs, fragment, packageURL, conditions);
 
 	// 6. RESOLVE_ESM_MATCH(MATCH).
 	return yield* resolveEsmMatch(fs, match);
 }
 
 // LOAD_PACKAGE_EXPORTS(X, DIR)
-function *loadPackageExports(fs: FileSystemTask, subpath: string, parentURL: URL): Task<Resolution | undefined> {
+function *loadPackageExports(fs: FileSystemTask, subpath: string, parentURL: URL, conditions: readonly string[]): Task<Resolution | undefined> {
 
 	// 3. Parse DIR/NAME/package.json, and look for "exports" field.
 	const pjson = yield* readPackageJson(fs, parentURL);
@@ -339,8 +343,6 @@ function *loadPackageExports(fs: FileSystemTask, subpath: string, parentURL: URL
 	// 5. If `--experimental-require-module` is enabled
 	//  a. let CONDITIONS = ["node", "require", "module-sync"]
 	//  b. Else, let CONDITIONS = ["node", "require"]
-	// nb: Omitted
-	const conditions = [ "node", "require" ];
 
 	// 6. let MATCH = PACKAGE_EXPORTS_RESOLVE(pathToFileURL(DIR/NAME), "." + SUBPATH, `package.json`
 	//    "exports", CONDITIONS) defined in the ESM resolver.
@@ -351,7 +353,7 @@ function *loadPackageExports(fs: FileSystemTask, subpath: string, parentURL: URL
 }
 
 // LOAD_PACKAGE_SELF(X, DIR)
-function *loadPackageSelf(fs: FileSystemTask, fragment: string, parentURL: URL): Task<Resolution | undefined> {
+function *loadPackageSelf(fs: FileSystemTask, fragment: string, parentURL: URL, conditions: readonly string[]): Task<Resolution | undefined> {
 	// 1. Find the closest package scope SCOPE to DIR.
 	const packageURL = yield* lookupPackageScope(fs, parentURL);
 
@@ -376,7 +378,7 @@ function *loadPackageSelf(fs: FileSystemTask, fragment: string, parentURL: URL):
 
 	// 5. let MATCH = PACKAGE_EXPORTS_RESOLVE(pathToFileURL(SCOPE), "." + X.slice("name".length),
 	//    `package.json` "exports", ["node", "require"]) defined in the ESM resolver.
-	const match = yield* packageExportsResolve(fs, packageURL, `.${fragment.slice(pjson.name.length)}`, pjson.exports, defaultConditions);
+	const match = yield* packageExportsResolve(fs, packageURL, `.${fragment.slice(pjson.name.length)}`, pjson.exports, conditions);
 
 	// 6. RESOLVE_ESM_MATCH(MATCH)
 	return yield* resolveEsmMatch(fs, match);
