@@ -73,6 +73,14 @@ await test("symlinked file", () => {
 	assert.strictEqual(esm("./dir/link.js", "main.js").url.href, "file:///dir/link.js");
 });
 
+await test("main field", () => {
+	const { cjs } = makeResolves({
+		"package.json": JSON.stringify({ main: "./main.js" }),
+		"main.js": "",
+	});
+	assert.strictEqual(cjs(".", "main.js").url.href, "file:///main.js");
+});
+
 await test("symlinked file format", () => {
 	const { cjs, esm } = makeResolves({
 		"package.json": JSON.stringify({}),

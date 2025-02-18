@@ -9,18 +9,24 @@ import { nodeCoreModules } from "./node-modules.js";
 // https://nodejs.org/api/modules.html#all-together
 
 const defaultConditions = [ "node", "require" ];
+const defaultExtensions = [ ".js", ".json", ".node" ];
 
-export async function resolve(fs: FileSystemAsync, specifier: string, parentURL: URL): Promise<Resolution> {
-	return task(() => resolver(makeFileSystemAsyncAdapter(fs), specifier, parentURL));
+interface ContextCJS {
+	extensions?: readonly string[];
 }
 
-export function resolveSync(fs: FileSystemSync, specifier: string, parentURL: URL): Resolution {
-	return expect(begin(task(() => resolver(makeFileSystemSyncAdapter(fs), specifier, parentURL))));
+export async function resolve(fs: FileSystemAsync, specifier: string, parentURL: URL, context?: ContextCJS): Promise<Resolution> {
+	return task(() => resolver(makeFileSystemAsyncAdapter(fs), specifier, parentURL, context));
+}
+
+export function resolveSync(fs: FileSystemSync, specifier: string, parentURL: URL, context?: ContextCJS): Resolution {
+	return expect(begin(task(() => resolver(makeFileSystemSyncAdapter(fs), specifier, parentURL, context))));
 }
 
 // require(X) from module at path Y
 // X = parentURL + fragment
-function *resolver(fs: FileSystemTask, fragment: string, parentURL: URL): Task<Resolution> {
+function *resolver(fs: FileSystemTask, fragment: string, parentURL: URL, context: ContextCJS | undefined): Task<Resolution> {
+	const extensions = context?.extensions ?? defaultExtensions;
 	// 1. If X is a core module,
 	//   a. return the core module
 	//   b. STOP
@@ -37,15 +43,16 @@ function *resolver(fs: FileSystemTask, fragment: string, parentURL: URL): Task<R
 	}
 
 	// 3. If X begins with './' or '/' or '../'
-	if (fragment.startsWith("./") || fragment.startsWith("../")) {
+	// nb: Specification is wrong! '.' is considered a relative path as well.
+	if (fragment === "." || fragment.startsWith("./") || fragment.startsWith("/") || fragment.startsWith("../")) {
 		// a. LOAD_AS_FILE(Y + X)
-		const asFile = yield* loadAsFile(fs, fragment, parentURL);
+		const asFile = yield* loadAsFile(fs, fragment, parentURL, extensions);
 		if (asFile) {
 			return asFile;
 		}
 
 		// b. LOAD_AS_DIRECTORY(Y + X)
-		const asDirectory = yield* loadAsDirectory(fs, new URL(`${encodeFragment(fragment)}/`, parentURL));
+		const asDirectory = yield* loadAsDirectory(fs, new URL(`${encodeFragment(fragment)}/`, parentURL), extensions);
 		if (asDirectory) {
 			return asDirectory;
 		}
@@ -70,7 +77,7 @@ function *resolver(fs: FileSystemTask, fragment: string, parentURL: URL): Task<R
 	}
 
 	// 6. LOAD_NODE_MODULES(X, dirname(Y))
-	const asNodeModules = yield* loadNodeModules(fs, fragment, new URL(".", parentURL));
+	const asNodeModules = yield* loadNodeModules(fs, fragment, new URL(".", parentURL), extensions);
 	if (asNodeModules) {
 		return asNodeModules;
 	}
@@ -92,7 +99,7 @@ function maybeDetectAndLoad(fs: FileSystemTask, file: URL) {
 
 // LOAD_AS_FILE(X)
 // X = parentURL + fragment
-function *loadAsFile(fs: FileSystemTask, fragment: string, parentURL: URL): Task<Resolution | undefined> {
+function *loadAsFile(fs: FileSystemTask, fragment: string, parentURL: URL, extensions: readonly string[]): Task<Resolution | undefined> {
 	const encodedFragment = encodeFragment(fragment);
 	// 1. If X is a file, load X as its file extension format. STOP
 	const asFile = new URL(encodedFragment, parentURL);
@@ -101,107 +108,115 @@ function *loadAsFile(fs: FileSystemTask, fragment: string, parentURL: URL): Task
 		return yield* loadWithFormat(fs, realname);
 	}
 
-	// 2. If X.js is a file,
-	const asJsFile = new URL(`${encodedFragment}.js`, parentURL);
-	if (yield* fs.fileExists(asJsFile)) {
-		const realname = yield* resolveFileLinks(fs, asJsFile);
-		// a. Find the closest package scope SCOPE to X.
-		const packageURL = yield* lookupPackageScope(fs, parentURL);
-		// b. If no scope was found
-		if (packageURL === null) {
-			// 1. MAYBE_DETECT_AND_LOAD(X.js)
-			return yield* maybeDetectAndLoad(fs, realname);
-		}
-		// c. If the SCOPE/package.json contains "type" field,
-		const pjson = yield* readPackageJson(fs, packageURL);
-		if (pjson?.type === "module") {
-			//   1. If the "type" field is "module", load X.js as an ECMAScript module. STOP.
-			return { format: "module", url: realname };
-		} else if (pjson?.type === "commonjs") {
-			// 2. If the "type" field is "commonjs", load X.js as an CommonJS module. STOP.
-			return { format: "commonjs", url: realname };
-		}
-		// d. MAYBE_DETECT_AND_LOAD(X.js)
-		return yield* maybeDetectAndLoad(fs, realname);
-	}
+	for (const extension of extensions) {
+		const withExtension = new URL(encodedFragment + extension, parentURL);
+		if (yield* fs.fileExists(withExtension)) {
+			const realname = yield* resolveFileLinks(fs, withExtension);
+			switch (extension) {
+				// 2. If X.js is a file,
+				case "js": {
+					// a. Find the closest package scope SCOPE to X.
+					const packageURL = yield* lookupPackageScope(fs, parentURL);
+					// b. If no scope was found
+					if (packageURL === null) {
+						// 1. MAYBE_DETECT_AND_LOAD(X.js)
+						return yield* maybeDetectAndLoad(fs, realname);
+					}
+					// c. If the SCOPE/package.json contains "type" field,
+					const pjson = yield* readPackageJson(fs, packageURL);
+					if (pjson?.type === "module") {
+						//   1. If the "type" field is "module", load X.js as an ECMAScript module. STOP.
+						return { format: "module", url: realname };
+					} else if (pjson?.type === "commonjs") {
+						// 2. If the "type" field is "commonjs", load X.js as an CommonJS module. STOP.
+						return { format: "commonjs", url: realname };
+					}
+					// d. MAYBE_DETECT_AND_LOAD(X.js)
+					return yield* maybeDetectAndLoad(fs, realname);
+				}
 
-	// 3. If X.json is a file, parse X.json to a JavaScript Object. STOP
-	const asJsonFile = new URL(`${encodedFragment}.json`, parentURL);
-	if (yield* fs.fileExists(asJsonFile)) {
-		const realname = yield* resolveFileLinks(fs, asJsonFile);
-		return { format: "json", url: realname };
-	}
+				case "json":
+					// 3. If X.json is a file, parse X.json to a JavaScript Object. STOP
+					return { format: "json", url: realname };
 
-	// 4. If X.node is a file, load X.node as binary addon. STOP
-	const asNodeFile = new URL(`${encodedFragment}.node`, parentURL);
-	if (yield* fs.fileExists(asNodeFile)) {
-		const realname = yield* resolveFileLinks(fs, asNodeFile);
-		return { format: "builtin", url: realname };
+				case "node":
+					// 4. If X.node is a file, load X.node as binary addon. STOP
+					return { format: "builtin", url: realname };
+
+				default:
+					// [vendor extension]
+					return { format: undefined, url: realname };
+			}
+		}
 	}
 }
 
 // LOAD_INDEX(X)
 // X = parentURL + fragment
-function *loadIndex(fs: FileSystemTask, fragment: string, parentURL: URL): Task<Resolution | undefined> {
+function *loadIndex(fs: FileSystemTask, fragment: string, parentURL: URL, extensions: readonly string[]): Task<Resolution | undefined> {
 	const encodedFragment = encodeFragment(fragment);
-	// 1. If X/index.js is a file
-	const asJsIndex = new URL(`${encodedFragment}/index.js`, parentURL);
-	if (yield* fs.fileExists(asJsIndex)) {
-		const realname = yield* resolveFileLinks(fs, asJsIndex);
-		// a. Find the closest package scope SCOPE to X.
-		const packageURL = yield* lookupPackageScope(fs, parentURL);
-		// b. If no scope was found, load X/index.js as a CommonJS module. STOP.
-		if (packageURL === null) {
-			return { format: "commonjs", url: realname };
-		}
-		// c. If the SCOPE/package.json contains "type" field,
-		const pjson = yield* readPackageJson(fs, packageURL);
-		if (pjson?.type === "module") {
-			// 1. If the "type" field is "module", load X/index.js as an ECMAScript module. STOP.
-			return { format: "module", url: realname };
-		} else {
-			// 2. Else, load X/index.js as an CommonJS module. STOP.
-			return { format: "commonjs", url: realname };
-		}
-	}
+	for (const extension of extensions) {
+		const withIndex = new URL(`${encodedFragment}/index${extension}`, parentURL);
+		if (yield* fs.fileExists(withIndex)) {
+			const realname = yield* resolveFileLinks(fs, withIndex);
+			switch (extension) {
+				// 1. If X/index.js is a file
+				case "js": {
+					// a. Find the closest package scope SCOPE to X.
+					const packageURL = yield* lookupPackageScope(fs, parentURL);
+					// b. If no scope was found, load X/index.js as a CommonJS module. STOP.
+					if (packageURL === null) {
+						return { format: "commonjs", url: realname };
+					}
+					// c. If the SCOPE/package.json contains "type" field,
+					const pjson = yield* readPackageJson(fs, packageURL);
+					if (pjson?.type === "module") {
+						// 1. If the "type" field is "module", load X/index.js as an ECMAScript module. STOP.
+						return { format: "module", url: realname };
+					} else {
+						// 2. Else, load X/index.js as an CommonJS module. STOP.
+						return { format: "commonjs", url: realname };
+					}
+				}
 
-	// 2. If X/index.json is a file, parse X/index.json to a JavaScript object. STOP
-	const asJsonIndex = new URL(`${encodedFragment}/index.json`, parentURL);
-	if (yield* fs.fileExists(asJsonIndex)) {
-		const realname = yield* resolveFileLinks(fs, asJsonIndex);
-		return { format: "json", url: realname };
-	}
+				// 2. If X/index.json is a file, parse X/index.json to a JavaScript object. STOP
+				case "json":
+					return { format: "json", url: realname };
 
-	// 3. If X/index.node is a file, load X/index.node as binary addon. STOP
-	const asNodeIndex = new URL(`${encodedFragment}/index.node`, parentURL);
-	if (yield* fs.fileExists(asNodeIndex)) {
-		const realname = yield* resolveFileLinks(fs, asNodeIndex);
-		return { format: "addon", url: realname };
+				// 3. If X/index.node is a file, load X/index.node as binary addon. STOP
+				case "node":
+					return { format: "addon", url: realname };
+
+				default:
+					// [vendor extension]
+					return { format: undefined, url: realname };
+			}
+		}
 	}
 }
 
 // LOAD_AS_DIRECTORY(X)
-function *loadAsDirectory(fs: FileSystemTask, path: URL): Task<Resolution | undefined> {
+function *loadAsDirectory(fs: FileSystemTask, path: URL, extensions: readonly string[]): Task<Resolution | undefined> {
 	// 1. If X/package.json is a file,
 	//   a. Parse X/package.json, and look for "main" field.
 	const pjson = yield* readPackageJson(fs, path);
 	//   b. If "main" is a falsy value, GOTO 2.
-	if (typeof pjson?.name === "string") {
+	if (typeof pjson?.main === "string") {
 		// c. let M = X + (json main field)
 		// d. LOAD_AS_FILE(M)
-		const asFile = yield* loadAsFile(fs, pjson.name, path);
+		const asFile = yield* loadAsFile(fs, pjson.main, path, extensions);
 		if (asFile) {
 			return asFile;
 		}
 
 		// e. LOAD_INDEX(M)
-		const asIndex = yield* loadIndex(fs, pjson.name, path);
+		const asIndex = yield* loadIndex(fs, pjson.main, path, extensions);
 		if (asIndex) {
 			return asIndex;
 		}
 
 		// f. LOAD_INDEX(X) DEPRECATED
-		const asDeprecatedIndex = yield* loadIndex(fs, ".", path);
+		const asDeprecatedIndex = yield* loadIndex(fs, ".", path, extensions);
 		if (asDeprecatedIndex) {
 			return asDeprecatedIndex;
 		}
@@ -210,7 +225,7 @@ function *loadAsDirectory(fs: FileSystemTask, path: URL): Task<Resolution | unde
 		throw new Error("not found");
 	}
 	// 2. LOAD_INDEX(X)
-	return yield* loadIndex(fs, ".", path);
+	return yield* loadIndex(fs, ".", path, extensions);
 }
 
 function *loadWithFormat(fs: FileSystemTask, url: URL): Task<Resolution> {
@@ -222,7 +237,7 @@ function *loadWithFormat(fs: FileSystemTask, url: URL): Task<Resolution> {
 }
 
 // LOAD_NODE_MODULES(X, START)
-function *loadNodeModules(fs: FileSystemTask, fragment: string, parentURL: URL): Task<Resolution | undefined> {
+function *loadNodeModules(fs: FileSystemTask, fragment: string, parentURL: URL, extensions: readonly string[]): Task<Resolution | undefined> {
 	const parts = extractNameAndSubpath(fragment);
 	if (!parts) {
 		return;
@@ -246,13 +261,13 @@ function *loadNodeModules(fs: FileSystemTask, fragment: string, parentURL: URL):
 		}
 
 		// b. LOAD_AS_FILE(DIR/X)
-		const asFile = yield* loadAsFile(fs, subpathFragment, realname);
+		const asFile = yield* loadAsFile(fs, subpathFragment, realname, extensions);
 		if (asFile) {
 			return asFile;
 		}
 
 		// c. LOAD_AS_DIRECTORY(DIR/X)
-		const asDirectory = yield* loadAsDirectory(fs, new URL(`${encodeFragment(subpathFragment)}/`, realname));
+		const asDirectory = yield* loadAsDirectory(fs, new URL(`${encodeFragment(subpathFragment)}/`, realname), extensions);
 		if (asDirectory) {
 			return asDirectory;
 		}
