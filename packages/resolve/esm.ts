@@ -682,7 +682,7 @@ export function *readPackageJson(fs: FileSystemTask, packageURL: URL): Task<Reco
 	// 3. If the file at packageURL does not parse as valid JSON, then
 	//   1. Throw an Invalid Package Configuration error.
 	// 4. Return the parsed JSON source of the file at pjsonURL.
-	const jsonPayload: unknown = JSON.parse(yield* fs.readFile(pjsonURL));
+	const jsonPayload = yield* fs.readFileJSON(pjsonURL);
 	if (typeof jsonPayload === "object" && jsonPayload !== null) {
 		return jsonPayload satisfies object as Record<string, unknown>;
 	}
@@ -777,13 +777,10 @@ function makeDetectCycle() {
 
 /** @internal */
 export function *resolveFileLinks(fs: FileSystemTask, path: URL): Task<URL> {
-	if (!fs.readLink) {
-		return path;
-	}
 	const detectCycle = makeDetectCycle();
 	const read = function*(url: URL): Task<URL> {
 		detectCycle(url);
-		const link = yield* fs.readLink!(url);
+		const link = yield* fs.readLink(url);
 		if (link === undefined) {
 			return url;
 		} else {
@@ -795,13 +792,10 @@ export function *resolveFileLinks(fs: FileSystemTask, path: URL): Task<URL> {
 
 /** @internal */
 export function *resolveDirectoryLinks(fs: FileSystemTask, path: URL): Task<URL> {
-	if (!fs.readLink) {
-		return path;
-	}
 	const detectCycle = makeDetectCycle();
 	const read = function*(url: URL): Task<URL> {
 		detectCycle(url);
-		const link = yield* fs.readLink!(new URL(url.pathname.slice(0, -1), url));
+		const link = yield* fs.readLink(new URL(url.pathname.slice(0, -1), url));
 		if (link === undefined) {
 			return url;
 		} else if (link === "/") {

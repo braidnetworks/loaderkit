@@ -18,14 +18,14 @@ export function makeTestFileSystem(files: Record<string, string>) {
 	// Resolves all links in the URL's path lineage
 	const realName = (url: URL) => {
 		// Read direct file link
-		const linked = readLink(url);
+		const linked = fs.readLink(url);
 		if (linked !== undefined) {
 			return realName(new URL(linked, url));
 		}
 		// Walk parent directories
 		let dir = new URL(".", url);
 		while (dir.pathname !== "/") {
-			const linked = readLink(dirToPath(dir));
+			const linked = fs.readLink(dirToPath(dir));
 			if (linked === undefined) {
 				dir = new URL("..", dir);
 			} else {
@@ -44,10 +44,16 @@ export function makeTestFileSystem(files: Record<string, string>) {
 		return url;
 	};
 
-	const readLink: NonNullable<FileSystemSync["readLink"]> = path => {
+	const readFileString = (path: URL) => {
 		checkProto(path);
-		return files[`${extractPath(path)}*`];
+		const file = extractPath(realName(path));
+		const content = files[file];
+		if (content === undefined) {
+			throw new Error(`File not found: ${file}`);
+		}
+		return content;
 	};
+
 	const fs: FileSystemSync = {
 		directoryExists(path) {
 			checkProto(path);
@@ -61,16 +67,14 @@ export function makeTestFileSystem(files: Record<string, string>) {
 			checkProto(path);
 			return extractPath(realName(path)) in files;
 		},
-		readFile(path) {
-			checkProto(path);
-			const file = extractPath(realName(path));
-			const content = files[file];
-			if (content === undefined) {
-				throw new Error(`File not found: ${file}`);
-			}
-			return content;
+		readFileJSON(path): unknown {
+			return JSON.parse(readFileString(path));
 		},
-		readLink,
+		readFileString,
+		readLink(path) {
+			checkProto(path);
+			return files[`${extractPath(path)}*`];
+		},
 	};
 	return fs;
 }
@@ -82,10 +86,12 @@ export function makeAsyncFileSystemFromSyncForTesting(fs: FileSystemSync): FileS
 		// eslint-disable-next-line @typescript-eslint/require-await
 		fileExists: async path => fs.fileExists(path),
 		// eslint-disable-next-line @typescript-eslint/require-await
-		readFile: async path => fs.readFile(path),
-		...fs.readLink && {
+		readFileJSON: async path => fs.readFileJSON(path),
+		// eslint-disable-next-line @typescript-eslint/require-await
+		readLink: async path => fs.readLink(path),
+		...fs.readFileString && {
 			// eslint-disable-next-line @typescript-eslint/require-await
-			readLink: async path => fs.readLink!(path),
+			readFileString: async path => fs.readFileString!(path),
 		},
 	};
 }
@@ -102,14 +108,12 @@ export function makeFileSystemSyncAdapter(fs: FileSystemSync): FileSystemTask {
 			return fs.fileExists(path);
 		},
 		// eslint-disable-next-line require-yield
-		*readFile(path: URL): Task<string> {
-			return fs.readFile(path);
+		*readFileJSON(path: URL): Task<unknown> {
+			return fs.readFileJSON(path);
 		},
-		...fs.readLink && {
-			// eslint-disable-next-line require-yield
-			*readLink(path: URL): Task<string | undefined> {
-				return fs.readLink!(path);
-			},
+		// eslint-disable-next-line require-yield
+		*readLink(path: URL): Task<string | undefined> {
+			return fs.readLink(path);
 		},
 	};
 }
@@ -123,13 +127,11 @@ export function makeFileSystemAsyncAdapter(fs: FileSystemAsync): FileSystemTask 
 		*fileExists(path: URL): Task<boolean> {
 			return yield* accept(fs.fileExists(path));
 		},
-		*readFile(path: URL): Task<string> {
-			return yield* accept(fs.readFile(path));
+		*readFileJSON(path: URL): Task<unknown> {
+			return yield* accept(fs.readFileJSON(path));
 		},
-		...fs.readLink && {
-			*readLink(path: URL): Task<string | undefined> {
-				return yield* accept(fs.readLink!(path));
-			},
+		*readLink(path: URL): Task<string | undefined> {
+			return yield* accept(fs.readLink(path));
 		},
 	};
 }
