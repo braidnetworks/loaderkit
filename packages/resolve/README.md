@@ -1,3 +1,6 @@
+[![npm version](https://badgen.now.sh/npm/v/@loaderkit/resolve)](https://www.npmjs.com/package/@loaderkit/resolve)
+[![isc license](https://badgen.now.sh/npm/license/@loaderkit/resolve)](https://github.com/braidnetworks/loaderkit/blob/main/LICENSE)
+
 🔎 @loaderkit/resolve - General purpose nodejs module resolver
 ==============================================================
 

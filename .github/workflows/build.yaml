@@ -1,4 +1,4 @@
-name: Build & lint
+name: Build
 on: [ push ]
 
 permissions:
@@ -7,16 +7,23 @@ permissions:
 
 jobs:
   build:
-    name: Build & lint
+    name: Build
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
-      - uses: bahmutov/npm-install@v1
-      - shell: bash
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: pnpm/action-setup@v4
+      - name: Install
+        run: pnpm install
+      - name: Build
         run: npx tsc -b
       # Forked: https://github.com/wearerequired/lint-action/issues/788
       - uses: rkuykendall/lint-action@3402def6dea8dbcf0b8ec42431d9345ee3f69c4d
         with:
           eslint: true
           eslint_args: "--max-warnings=0 --report-unused-disable-directives"
+      - name: Test
+        run: pnpm -r run test
