@@ -12,11 +12,11 @@ should not be using CommonJS.
 Source maps are passed along in the transpilation process, so the `--enable-source-maps` nodejs flag
 is recommended.
 
-An extra degree of care has been taken to ensure that `import.meta.url`, and the internal `url`
-values are reasonable. When an output destination is specified in the nearest `tsconfig.json` then
-`import.meta.url` will be the value it would have been if run from the `tsc`-transpiled output. The
-internal `url` property will be resolved to the TypeScript source file which ensures good support
-with chained loaders such as [dynohot](https://github.com/braidnetworks/dynohot).
+An extra degree of care has been taken to ensure that `import.meta.url` is correct. My belief is
+that the behavior of your program should not be different between development and production
+versions. And I don't think that this should be controversial either. So, when an output destination
+is specified in the nearest `tsconfig.json` then `import.meta.url` will be the value it would have
+been if run from the `tsc`-transpiled output.
 
 
 EXAMPLE
@@ -29,13 +29,6 @@ console.log(value);
 ```
 
 ```
-$ node --import @loaderkit/ts/register test.ts
-hello world
-```
-
-OR
-
-```
-$ node --loader @loaderkit/ts test.ts
+$ node --import @loaderkit/ts test.ts
 hello world
 ```

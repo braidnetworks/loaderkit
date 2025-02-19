@@ -1,6 +1,7 @@
 import type { LoaderFileSystem, PackageJson, ResolutionConfig } from "./utility/scope.js";
 import type { FileSystemAsync } from "@loaderkit/resolve/fs";
 import type { LoadHook, ResolveHook } from "node:module";
+import type {} from "dynohot";
 import * as assert from "node:assert/strict";
 import { resolve as cjsResolve } from "@loaderkit/resolve/cjs";
 import { resolve as esmResolve } from "@loaderkit/resolve/esm";
@@ -173,35 +174,46 @@ export function makeResolveAndLoad(underlyingFileSystem: LoaderFileSystem) {
 			return nextResolve(specifier, context);
 		}
 
-		// Try as TypeScript resolution
-		return async function() {
-
-			// Check for fully-resolved .ts files, i.e. `import(import.meta.resolve('./specifier.js'))`
-			if (specifier.startsWith("file:///")) {
-				const url = new URL(specifier);
-				if (testAnyJavaScript.test(url.pathname)) {
-					const packageMeta = await resolvePackage(fileSystem, url);
-					const tsConfig = await resolveTypeScriptPackage(url, packageMeta?.packagePath);
-					for (const sourceUrl of outputToSourceCandidates(url, tsConfig?.locations)) {
-						if (await fileSystem.fileExists(sourceUrl)) {
-							return {
-								format: resolveFormat(specifier, packageMeta?.packageJson),
-								url: specifier,
-								importAttributes: {
-									...context.importAttributes,
-									ts: sourceUrl.href,
-								},
-								shortCircuit: true,
-							};
+		// Check for fully-resolved .ts files, i.e. `import(import.meta.resolve('./specifier.js'))`
+		if (
+			specifier.startsWith("file:///") &&
+			!specifier.includes("/node_modules/")
+		) {
+			return async function() {
+				const outputUrl = new URL(specifier);
+				const packageMeta = await resolvePackage(fileSystem, outputUrl);
+				const tsConfig = await resolveTypeScriptPackage(outputUrl, packageMeta?.packagePath);
+				const sourceUrl = await async function() {
+					for (const url of outputToSourceCandidates(outputUrl, tsConfig?.locations)) {
+						if (await fileSystem.fileExists(url)) {
+							return url;
 						}
 					}
+				}();
+				if (!sourceUrl) {
+					return nextResolve(specifier, context);
 				}
-			}
+				const format = resolveFormat(sourceUrl.pathname, packageMeta?.packageJson);
+				resolvedTypeScriptParents.set(outputUrl.href, sourceUrl);
+				return {
+					format,
+					url: outputUrl.href,
+					importAttributes: {
+						...context.importAttributes,
+						ts: sourceUrl.href,
+					},
+					shortCircuit: true,
+				};
+			}();
+		}
 
-			// Bail on fully-qualified URLs
-			if (testHasScheme.test(specifier)) {
-				return nextResolve(specifier, context);
-			}
+		// Bail on fully-qualified URLs
+		if (testHasScheme.test(specifier)) {
+			return nextResolve(specifier, context);
+		}
+
+		// Try as TypeScript resolution
+		return async function() {
 
 			// Look up parent tsconfig
 			const packageMeta = await resolvePackage(fileSystem, parentURL);
@@ -318,14 +330,18 @@ export function makeResolveAndLoad(underlyingFileSystem: LoaderFileSystem) {
 			// `tsSourceUrl` is a `.ts` file, or maybe a `.js` file with `allowJs`.
 			const tsSourceUrl = new URL(tsSource);
 
+			// dynohot integration
+			if (context.hot) {
+				context.hot.watch(tsSourceUrl);
+			}
+
 			// Resolve compiler options
 			const packageMeta = await resolvePackage(fileSystem, tsSourceUrl);
 			const tsConfig = await resolveTypeScriptPackage(tsSourceUrl, packageMeta?.packagePath);
 
 			// Get transpiled source. JavaScript is also passed through esbuild in case downleveling
 			// is expected.
-			// nb: Underlying filesystem used for `dynohot`
-			const content = await underlyingFileSystem.readFileString(tsSourceUrl);
+			const content = await fileSystem.readFileString(tsSourceUrl);
 			const payload = await transpileSource(content, format, tsSourceUrl, tsConfig?.compilerOptions ?? {});
 			return {
 				format,

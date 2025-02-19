@@ -16,9 +16,12 @@
 		"test": "node --no-warnings --experimental-vm-modules --enable-source-maps --test-reporter=spec --test 'dist/__tests__/**/*.js'"
 	},
 	"dependencies": {
-		"@loaderkit/resolve": "workspace:*",
+		"@loaderkit/resolve": "^1.0.0",
 		"esbuild": "^0.25.0",
 		"json5": "^2.2.3"
+	},
+	"devDependencies": {
+		"dynohot": "^2.0.0"
 	},
 	"repository": {
 		"type": "git",
