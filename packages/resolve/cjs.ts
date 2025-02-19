@@ -116,7 +116,7 @@ function *loadAsFile(fs: FileSystemTask, fragment: string, parentURL: URL, exten
 			const realname = yield* resolveFileLinks(fs, withExtension);
 			switch (extension) {
 				// 2. If X.js is a file,
-				case "js": {
+				case ".js": {
 					// a. Find the closest package scope SCOPE to X.
 					const packageURL = yield* lookupPackageScope(fs, parentURL);
 					// b. If no scope was found
@@ -137,11 +137,11 @@ function *loadAsFile(fs: FileSystemTask, fragment: string, parentURL: URL, exten
 					return yield* maybeDetectAndLoad(fs, realname);
 				}
 
-				case "json":
+				case ".json":
 					// 3. If X.json is a file, parse X.json to a JavaScript Object. STOP
 					return { format: "json", url: realname };
 
-				case "node":
+				case ".node":
 					// 4. If X.node is a file, load X.node as binary addon. STOP
 					return { format: "builtin", url: realname };
 
@@ -163,7 +163,7 @@ function *loadIndex(fs: FileSystemTask, fragment: string, parentURL: URL, extens
 			const realname = yield* resolveFileLinks(fs, withIndex);
 			switch (extension) {
 				// 1. If X/index.js is a file
-				case "js": {
+				case ".js": {
 					// a. Find the closest package scope SCOPE to X.
 					const packageURL = yield* lookupPackageScope(fs, parentURL);
 					// b. If no scope was found, load X/index.js as a CommonJS module. STOP.
@@ -182,11 +182,11 @@ function *loadIndex(fs: FileSystemTask, fragment: string, parentURL: URL, extens
 				}
 
 				// 2. If X/index.json is a file, parse X/index.json to a JavaScript object. STOP
-				case "json":
+				case ".json":
 					return { format: "json", url: realname };
 
 				// 3. If X/index.node is a file, load X/index.node as binary addon. STOP
-				case "node":
+				case ".node":
 					return { format: "addon", url: realname };
 
 				default:
