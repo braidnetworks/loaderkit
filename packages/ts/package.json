@@ -1,11 +1,10 @@
 {
 	"name": "@loaderkit/ts",
 	"type": "module",
-	"version": "1.0.0",
+	"version": "2.0.0",
 	"exports": {
 		".": "./dist/register.js",
-		"./loader": "./dist/loader.js",
-		"./ll": "./dist/ll.js"
+		"./loader": "./dist/loader.js"
 	},
 	"imports": {
 		"#ts/*": "./dist/*.js"
