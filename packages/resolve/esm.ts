@@ -1,14 +1,15 @@
 import type { FileSystemAsync, FileSystemSync, FileSystemTask } from "./fs.js";
 import type { Task } from "@braidai/lang/task/utility";
-import type { ModuleFormat } from "node:module";
 import { begin, expect, task } from "@braidai/lang/task/task";
 import { makeFileSystemAsyncAdapter, makeFileSystemSyncAdapter } from "./adapter.js";
 import { nodeCoreModules } from "./node-modules.js";
 
 // https://nodejs.org/api/esm.html#resolution-and-loading-algorithm
 
+export type ModuleFormat = "addon" | "builtin" | "commonjs" | "json" | "module" | "wasm";
+
 export interface Resolution {
-	format: ModuleFormat | "addon" | undefined;
+	format: ModuleFormat | undefined;
 	url: URL;
 }
 
@@ -58,7 +59,7 @@ function *resolver(fs: FileSystemTask, specifier: string, parentURL: URL): Task<
 	}();
 
 	// 6. Let format be undefined.
-	const format = yield* function*(): Task<ModuleFormat | "addon" | undefined> {
+	const format = yield* function*(): Task<ModuleFormat | undefined> {
 		// 7. If resolved is a "file:" URL, then
 		if (url.protocol === "file:") {
 			// 1. If resolved contains any percent encodings of "/" or "\" ("%2F" and "%5C" respectively), then
@@ -542,7 +543,7 @@ function *packageTargetResolve(
 
 // ESM_FILE_FORMAT(url)
 /** @internal */
-export function *esmFileFormat(fs: FileSystemTask, url: URL): Task<ModuleFormat | "addon" | undefined> {
+export function *esmFileFormat(fs: FileSystemTask, url: URL): Task<ModuleFormat | undefined> {
 	// 1. Assert: url corresponds to an existing file.
 	// 2. If url ends in ".mjs", then
 	if (url.pathname.endsWith(".mjs")) {
