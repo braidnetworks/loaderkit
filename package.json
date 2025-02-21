@@ -10,6 +10,7 @@
 	},
 	"devDependencies": {
 		"@braidai/eslintrc": "^1.2.0",
+		"@changesets/cli": "^2.28.1",
 		"@types/eslint": "^9.6.1",
 		"@types/node": "^22.13.1",
 		"eslint": "^9.20.1",
