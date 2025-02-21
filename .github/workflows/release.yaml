@@ -15,7 +15,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - uses: bahmutov/npm-install@v1
 
       - uses: pnpm/action-setup@v4
       - run: pnpm install
