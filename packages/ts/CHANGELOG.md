@@ -1,5 +1,11 @@
 # @loaderkit/ts
 
+## 2.0.1
+
+### Patch Changes
+
+- 4cf2cc2: Resolve JSON to source
+
 ## 2.0.0
 
 ### Patch Changes
