@@ -2,12 +2,11 @@ import type { LoaderFileSystem, PackageJson, ResolutionConfig } from "./utility/
 import type { FileSystemAsync } from "@loaderkit/resolve/fs";
 import type { LoadHook, ResolveHook } from "node:module";
 import type {} from "dynohot";
-import * as assert from "node:assert/strict";
 import { resolve as cjsResolve } from "@loaderkit/resolve/cjs";
 import { resolve as esmResolve } from "@loaderkit/resolve/esm";
 import { transpileSource } from "./utility/esbuild.js";
 import { makeResolveTypeScriptPackage, resolveFormat, resolvePackage } from "./utility/scope.js";
-import { absoluteJavaScriptToTypeScript, absoluteTypeScriptToJavaScript, outputToSourceCandidates, sourceToOutput, testAnyJavaScript, testAnyScript, testAnyTypeScript } from "./utility/translate.js";
+import { absoluteJavaScriptToTypeScript, absoluteTypeScriptToJavaScript, outputToSourceCandidates, sourceToOutput, testAnyJSON, testAnyJavaScript, testAnyScript, testAnyTypeScript } from "./utility/translate.js";
 
 const testHasScheme = /^[a-z][a-z0-9+.-]*:/i;
 const commonJsExtensions = [ ".js", ".jsx" ];
@@ -81,7 +80,10 @@ export function makeResolveAndLoad(underlyingFileSystem: LoaderFileSystem) {
 	const outputResolverFileSystem: FileSystemAsync = {
 		...fileSystem,
 		fileExists: async url => {
-			if (testAnyScript.test(url.pathname)) {
+			if (
+				testAnyScript.test(url.pathname) ||
+				(testAnyJSON.test(url.pathname) && !url.pathname.endsWith("/package.json"))
+			) {
 				const tsConfig = await resolveTsConfig(url);
 				for (const location of outputToSourceCandidates(url, tsConfig?.locations)) {
 					if (await fileSystem.fileExists(location)) {
@@ -94,7 +96,7 @@ export function makeResolveAndLoad(underlyingFileSystem: LoaderFileSystem) {
 			}
 		},
 		readLink: async url => {
-			if (!testAnyScript.test(url.pathname)) {
+			if (!testAnyScript.test(url.pathname) && !testAnyJSON.test(url.pathname)) {
 				return fileSystem.readLink(url);
 			}
 		},
@@ -268,7 +270,7 @@ export function makeResolveAndLoad(underlyingFileSystem: LoaderFileSystem) {
 				!sourceUrl ||
 				url.protocol !== "file:" ||
 				url.pathname.includes("/node_modules/") ||
-				(format !== undefined && format !== "module" && format !== "commonjs")
+				(format !== undefined && format !== "module" && format !== "commonjs" && format !== "json")
 			) {
 				return {
 					format: format === "addon" ? undefined : format,
@@ -287,10 +289,10 @@ export function makeResolveAndLoad(underlyingFileSystem: LoaderFileSystem) {
 			const resolvedFormat = format ?? resolveFormat(sourceUrl.pathname, packageMeta?.packageJson);
 
 			// Pass off to loader
-			if (resolvedFormat === "module") {
+			if (resolvedFormat === "module" || resolvedFormat === "json") {
 				resolvedTypeScriptParents.set(url.href, sourceUrl);
 				return {
-					format: "module",
+					format: resolvedFormat,
 					url: url.href,
 					importAttributes: {
 						...context.importAttributes,
@@ -316,18 +318,9 @@ export function makeResolveAndLoad(underlyingFileSystem: LoaderFileSystem) {
 			// Not resolved with this loader
 			return nextLoad(urlString, context);
 		}
-		assert.strictEqual(format, "module");
 
-		// Validate attributes
-		for (const key of Object.keys(importAttributes)) {
-			if (key !== "ts") {
-				throw new TypeError(`Import attribute '${key}' with value '${importAttributes[key]}' is not supported`);
-			}
-		}
-
-		// Load as transpiled TypeScript
 		return async function() {
-			// `tsSourceUrl` is a `.ts` file, or maybe a `.js` file with `allowJs`.
+			// `tsSourceUrl` is a `.ts` file, or maybe a `.js` file with `allowJs`, or `.json` file with `allowJson`.
 			const tsSourceUrl = new URL(tsSource);
 
 			// dynohot integration
@@ -339,15 +332,38 @@ export function makeResolveAndLoad(underlyingFileSystem: LoaderFileSystem) {
 			const packageMeta = await resolvePackage(fileSystem, tsSourceUrl);
 			const tsConfig = await resolveTypeScriptPackage(tsSourceUrl, packageMeta?.packagePath);
 
-			// Get transpiled source. JavaScript is also passed through esbuild in case downleveling
-			// is expected.
-			const content = await fileSystem.readFileString(tsSourceUrl);
-			const payload = await transpileSource(content, format, tsSourceUrl, tsConfig?.compilerOptions ?? {});
-			return {
-				format,
-				shortCircuit: true,
-				source: payload,
-			};
+			switch (format) {
+				case "module": {
+					// Validate attributes
+					for (const key of Object.keys(importAttributes)) {
+						if (key !== "ts") {
+							throw new TypeError(`Import attribute '${key}' with value '${importAttributes[key]}' is not supported`);
+						}
+					}
+
+					// Get transpiled source. JavaScript is also passed through esbuild in case downleveling
+					// is expected.
+					const content = await fileSystem.readFileString(tsSourceUrl);
+					const payload = await transpileSource(content, format, tsSourceUrl, tsConfig?.compilerOptions ?? {});
+					return {
+						format,
+						shortCircuit: true,
+						source: payload,
+					};
+				}
+
+				case "json": {
+					// Pass source URL to JSON loader
+					const filteredAttributes = Object.fromEntries(Object.entries(importAttributes).filter(([ key ]) => key !== "ts"));
+					return nextLoad(tsSourceUrl.href, {
+						...context,
+						importAttributes: filteredAttributes,
+					});
+				}
+
+				default:
+					throw new Error("@loaderkit/ts: Unexpected format");
+			}
 		}();
 	};
 

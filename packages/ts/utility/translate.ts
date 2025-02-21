@@ -7,7 +7,8 @@ const fileNameOf = (file: URL) => {
 
 /** @internal */
 export const testAnyJavaScript = /\.[cm]?jsx?$/i;
-const testAnyJSON = /\.json$/i;
+/** @internal */
+export const testAnyJSON = /\.json$/i;
 /** @internal */
 export const testAnyTypeScript = /\.[cm]?tsx?$/i;
 /** @internal */
@@ -81,6 +82,11 @@ export function *outputToSourceCandidates(output: URL, locations: ResolutionConf
 		} else if (testAnyTypeScript.test(output.pathname)) {
 			const candidate = translateLocation(output, locations.outputBase, locations.sourceBase, identity);
 			if (candidate) {
+				yield candidate;
+			}
+		} else if (testAnyJSON.test(output.pathname)) {
+			const candidate = translateLocation(output, locations.outputBase, locations.sourceBase, identity);
+			if (candidate && locations.allowJson) {
 				yield candidate;
 			}
 		}

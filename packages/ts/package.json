@@ -15,7 +15,7 @@
 		"test": "node --no-warnings --experimental-vm-modules --enable-source-maps --test-reporter=spec --test 'dist/__tests__/**/*.js'"
 	},
 	"dependencies": {
-		"@loaderkit/resolve": "^1.0.0",
+		"@loaderkit/resolve": "workspace:*",
 		"esbuild": "^0.25.0",
 		"json5": "^2.2.3"
 	},

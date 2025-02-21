@@ -36,8 +36,8 @@ importers:
   packages/ts:
     dependencies:
       '@loaderkit/resolve':
-        specifier: ^1.0.0
-        version: 1.0.0
+        specifier: workspace:*
+        version: link:../resolve
       esbuild:
         specifier: ^0.25.0
         version: 0.25.0
@@ -408,9 +408,6 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.25':
     resolution: {integrity: sha512-vNk6aEwybGtawWmy/PzwnGDOjCkLWSD2wqvjGGAgOAwCGWySYXfYoxt00IJkTF+8Lb57DwOb3Aa0o9CApepiYQ==}
-
-  '@loaderkit/resolve@1.0.0':
-    resolution: {integrity: sha512-HV9ywG52Tmn4rSOAO7GAw0JPoS9HhkRWwdXmlaPv+vDMxKsVKARiPMaWif+f6Myqgpr9TAwr/sTJMi3GM/Ch5A==}
 
   '@manypkg/find-root@1.1.0':
     resolution: {integrity: sha512-mki5uBvhHzO8kYYix/WRy2WX8S3B5wdVSc9D6KcU5lQNglP2yt58/VfLuAK49glRXChosY8ap2oJ1qgma3GUVA==}
@@ -1986,10 +1983,6 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.0
-
-  '@loaderkit/resolve@1.0.0':
-    dependencies:
-      '@braidai/lang': 1.0.0
 
   '@manypkg/find-root@1.1.0':
     dependencies:
