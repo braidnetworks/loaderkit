@@ -98,23 +98,59 @@ function *resolver(fs: FileSystemTask, specifier: string, parentURL: URL): Task<
 
 // PACKAGE_RESOLVE(packageSpecifier, parentURL)
 function *packageResolve(fs: FileSystemTask, packageSpecifier: string, parentURL: URL): Task<URL> {
+	// nb: Bumped up here since it eases the closure down there.
 	// 3. If packageSpecifier is a Node.js builtin module name, then
 	if (nodeCoreModules.includes(packageSpecifier)) {
 		// 1. Return the string "node:" concatenated with packageSpecifier.
 		return new URL(`node:${packageSpecifier}`);
 	}
 
-	// [Steps 1-2, 4-6, 8 continued in `extractNameAndSubpath`]
-	const nameAndSubPath = extractNameAndSubpath(packageSpecifier);
-	if (!nameAndSubPath) {
-		// [combined] Throw an Invalid Module Specifier error.
+	// 1. Let packageName be undefined.
+	const packageName = function() {
+		// 2. If packageSpecifier is an empty string, then
+		if (packageSpecifier === "") {
+			// 1. Throw an Invalid Module Specifier error.
+			throw new Error("Invalid Module Specifier");
+		}
+
+		// 3. [See above]
+
+		if (packageSpecifier.startsWith("@")) {
+			// 5. Otherwise,
+			//   1. If packageSpecifier does not contain a "/" separator, then
+			let slash = packageSpecifier.indexOf("/");
+			slash = slash === -1 ? slash : packageSpecifier.indexOf("/", slash + 1);
+			if (slash === -1) {
+				// 1. Throw an Invalid Module Specifier error.
+				throw new Error("Invalid Module Specifier");
+			}
+			// 2. Set packageName to the substring of packageSpecifier until the second "/" separator or the
+			//    end of the string.
+			return packageSpecifier.slice(0, slash);
+		} else {
+			// 4. If packageSpecifier does not start with "@", then
+			//   1. Set packageName to the substring of packageSpecifier until the first "/"
+			//      separator or the end of the string.
+			const slash = packageSpecifier.indexOf("/");
+			return slash === -1 ? packageSpecifier : packageSpecifier.slice(0, slash);
+		}
+	}();
+
+	// 6. If packageName starts with "." or contains "\" or "%", then
+	if (packageName.startsWith(".") || packageName.includes("\\") || packageName.includes("%")) {
+		// 1. Throw an Invalid Module Specifier error.
 		throw new Error("Invalid Module Specifier");
 	}
-	const packageName = nameAndSubPath.name;
 
 	// 7. Let packageSubpath be "." concatenated with the substring of packageSpecifier from the
 	//    position at the length of packageName.
-	const packageSubpath = `.${nameAndSubPath.subpath}`;
+	const packageSubpath = `.${packageSpecifier.substring(packageName.length)}`;
+
+	// 8. If packageSubpath ends in "/", then
+	if (packageSubpath.endsWith("/")) {
+		// 1. Throw an Invalid Module Specifier error.
+		throw new Error("Invalid Module Specifier");
+	}
 
 	// 9. Let selfUrl be the result of PACKAGE_SELF_RESOLVE(packageName, packageSubpath, parentURL).
 	const selfUrl = yield* packageSelfResolve(fs, packageName, packageSubpath, parentURL);
@@ -703,67 +739,6 @@ function detectModuleSyntax(fs: FileSystemTask, source: string) {
 
 	// nb: Haha, yeah right
 	return false;
-}
-
-/**
- * Extracts name and subpath from a `@name/name/subpath` or `name/subpath` specifier.
- * @internal
- */
-export function extractNameAndSubpath(packageSpecifier: string) {
-	// From: PACKAGE_RESOLVE
-	// 1. Let packageName be undefined.
-	const name = function() {
-		// 2. If packageSpecifier is an empty string, then
-		if (packageSpecifier === "") {
-			// 1. Throw an Invalid Module Specifier error.
-			return;
-		}
-
-		// 3. If packageSpecifier is a Node.js builtin module name, then
-		// [Omitted]
-
-		if (packageSpecifier.startsWith("@")) {
-			// 5. Otherwise,
-			//   1. If packageSpecifier does not contain a "/" separator, then
-			let slash = packageSpecifier.indexOf("/");
-			slash = slash === -1 ? slash : packageSpecifier.indexOf("/", slash + 1);
-			if (slash === -1) {
-				// 1. Throw an Invalid Module Specifier error.
-				return;
-			}
-			// 2. Set packageName to the substring of packageSpecifier until the second "/" separator or the
-			//    end of the string.
-			return packageSpecifier.slice(0, slash);
-		} else {
-			// 4. If packageSpecifier does not start with "@", then
-			//   1. Set packageName to the substring of packageSpecifier until the first "/"
-			//      separator or the end of the string.
-			const slash = packageSpecifier.indexOf("/");
-			return slash === -1 ? packageSpecifier : packageSpecifier.slice(0, slash);
-		}
-	}();
-	if (name === undefined) {
-		return;
-	}
-
-	// 6. If packageName starts with "." or contains "\" or "%", then
-	if (name.startsWith(".") || name.includes("\\") || name.includes("%")) {
-		// 1. Throw an Invalid Module Specifier error.
-		return;
-	}
-
-	// 7. Let packageSubpath be "." concatenated with the substring of packageSpecifier from the
-	//    position at the length of packageName.
-	// nb: "." omitted
-	const subpath = packageSpecifier.substring(name.length);
-
-	// 8. If packageSubpath ends in "/", then
-	if (subpath.endsWith("/")) {
-		// 1. Throw an Invalid Module Specifier error.
-		return;
-	}
-
-	return { name, subpath };
 }
 
 function makeDetectCycle() {

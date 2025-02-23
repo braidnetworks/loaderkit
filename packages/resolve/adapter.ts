@@ -17,6 +17,8 @@ export function makeTestFileSystem(files: Record<string, string>): FileSystemSyn
 
 	// Resolves all links in the URL's path lineage
 	const realName = (url: URL) => {
+		// Flatten multiple slashes, which I guess is just how filesystems work.
+		url = new URL(url.href.replace(/\/+/g, "/"));
 		// Read direct file link
 		const linked = fs.readLink(url);
 		if (linked !== undefined) {
