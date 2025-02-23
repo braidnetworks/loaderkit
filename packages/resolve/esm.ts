@@ -147,10 +147,10 @@ function *packageResolve(fs: FileSystemTask, packageSpecifier: string, parentURL
 	const packageSubpath = `.${packageSpecifier.substring(packageName.length)}`;
 
 	// 8. If packageSubpath ends in "/", then
-	if (packageSubpath.endsWith("/")) {
-		// 1. Throw an Invalid Module Specifier error.
-		throw new Error("Invalid Module Specifier");
-	}
+	// if (packageSubpath.endsWith("/")) {
+	// 	// 1. Throw an Invalid Module Specifier error.
+	// 	throw new Error("Invalid Module Specifier");
+	// }
 
 	// 9. Let selfUrl be the result of PACKAGE_SELF_RESOLVE(packageName, packageSubpath, parentURL).
 	const selfUrl = yield* packageSelfResolve(fs, packageName, packageSubpath, parentURL);

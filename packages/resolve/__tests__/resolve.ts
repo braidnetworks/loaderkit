@@ -46,14 +46,25 @@ await test("trailing slash is not valid", () => {
 			},
 		}),
 		"node_modules/mod/index.js": "",
-		"package.json": JSON.stringify({ imports: { "#test/*": "./index.js" } }),
+		"package.json": JSON.stringify({
+			imports: {
+				"#test/*": "./index.js",
+				"#test/test/": "./index.js",
+			},
+		}),
 		"index.js": "",
 	});
 	assert.throws(() => cjs("mod/", "main.js"));
 	assert.throws(() => cjs("mod/test/", "main.js"));
+	assert.throws(() => cjs("mod/wildcard/", "main.js"));
+	assert.throws(() => cjs("#test/", "main.js"));
+	assert.throws(() => cjs("#test/test/", "main.js"));
 	assert.throws(() => cjs("#test/wildcard/", "main.js"));
 	assert.throws(() => esm("mod/", "main.js"));
 	assert.throws(() => esm("mod/test/", "main.js"));
+	assert.throws(() => esm("mod/wildcard/", "main.js"));
+	assert.throws(() => esm("#test/", "main.js"));
+	assert.throws(() => esm("#test/test/", "main.js"));
 	assert.throws(() => esm("#test/wildcard/", "main.js"));
 });
 
