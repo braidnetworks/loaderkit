@@ -3,7 +3,7 @@ import type { FileSystemAsync, FileSystemSync, FileSystemTask } from "./fs.js";
 import type { Task } from "@braidai/lang/task/utility";
 import { begin, expect, task } from "@braidai/lang/task/task";
 import { makeFileSystemAsyncAdapter, makeFileSystemSyncAdapter } from "./adapter.js";
-import { esmFileFormat, extractNameAndSubpath, lookupPackageScope, packageExportsResolve, packageImportsResolve, readPackageJson, resolveDirectoryLinks, resolveFileLinks } from "./esm.js";
+import { esmFileFormat, lookupPackageScope, packageExportsResolve, packageImportsResolve, readPackageJson, resolveDirectoryLinks, resolveFileLinks } from "./esm.js";
 import { nodeCoreModules } from "./node-modules.js";
 
 // https://nodejs.org/api/modules.html#all-together
@@ -240,11 +240,24 @@ function *loadWithFormat(fs: FileSystemTask, url: URL): Task<Resolution> {
 
 // LOAD_NODE_MODULES(X, START)
 function *loadNodeModules(fs: FileSystemTask, fragment: string, parentURL: URL, context: ContextCJS | undefined): Task<Resolution | undefined> {
-	const parts = extractNameAndSubpath(fragment);
-	if (!parts) {
-		return;
-	}
-	const subpathFragment = parts.subpath.slice(1);
+
+	// From: LOAD_PACKAGE_EXPORTS. These steps performed here in order to resolve node_modules
+	// symlinks.
+	const nameAndSubpath = function() {
+		// 1. Try to interpret X as a combination of NAME and SUBPATH where the name
+		//    may have a @scope/ prefix and the subpath begins with a slash (`/`).
+		const matches = /^(?<name>(?:@[^/]+\/)?[^/]+)(?<subpath>\/.*)$/.exec(fragment);
+		if (matches === null) {
+			return;
+		}
+		return matches.groups as { name: string; subpath: string };
+	}();
+	// If `fragment` is a bare module specifier then the lifted instructions from
+	// `LOAD_PACKAGE_EXPORTS` dictate that `nameAndSubpath` is undefined. In that case `realname`
+	// below will be the fully resolved path to the module. Then, `subpathFragment` becomes "."
+	// which resolves to the module directory.
+	const subpathFragment = nameAndSubpath ? `.${nameAndSubpath.subpath}` : ".";
+
 	const conditions = context?.conditions ?? defaultConditions;
 	const extensions = context?.extensions ?? defaultExtensions;
 
@@ -256,12 +269,14 @@ function *loadNodeModules(fs: FileSystemTask, fragment: string, parentURL: URL, 
 		if (!(yield* fs.directoryExists(dir))) {
 			continue;
 		}
-		const realname = yield* resolveDirectoryLinks(fs, new URL(encodeFragment(`${parts.name}/`), dir));
+		const realname = yield* resolveDirectoryLinks(fs, new URL(encodeFragment(`${nameAndSubpath ? nameAndSubpath.name : fragment}/`), dir));
 
 		// a. LOAD_PACKAGE_EXPORTS(X, DIR)
-		const asPackageExports = yield* loadPackageExports(fs, parts.subpath, realname, conditions);
-		if (asPackageExports) {
-			return asPackageExports;
+		if (nameAndSubpath) {
+			const asPackageExports = yield* loadPackageExports(fs, nameAndSubpath.subpath, realname, conditions);
+			if (asPackageExports) {
+				return asPackageExports;
+			}
 		}
 
 		// b. LOAD_AS_FILE(DIR/X)

@@ -39,11 +39,38 @@ await test("root node_modules", () => {
 
 await test("trailing slash is not valid", () => {
 	const { cjs, esm } = makeResolves({
-		"node_modules/mod/package.json": JSON.stringify({ exports: { "./": "./index.js" } }),
+		"node_modules/mod/package.json": JSON.stringify({
+			exports: {
+				"./*": "./index.js",
+				"./test/": "./index.js",
+			},
+		}),
 		"node_modules/mod/index.js": "",
+		"package.json": JSON.stringify({ imports: { "#test/*": "./index.js" } }),
+		"index.js": "",
 	});
 	assert.throws(() => cjs("mod/", "main.js"));
+	assert.throws(() => cjs("mod/test/", "main.js"));
+	assert.throws(() => cjs("#test/wildcard/", "main.js"));
 	assert.throws(() => esm("mod/", "main.js"));
+	assert.throws(() => esm("mod/test/", "main.js"));
+	assert.throws(() => esm("#test/wildcard/", "main.js"));
+});
+
+await test("trailing slash actually is valid sometimes", () => {
+	const { cjs } = makeResolves({
+		"node_modules/mod/package.json": JSON.stringify({}),
+		"node_modules/mod/index.js": "",
+	});
+	cjs("mod/", "main.js");
+});
+
+await test("commonjs accepts package name that esm does not", () => {
+	const { cjs, esm } = makeResolves({
+		"node_modules/.mod/index.js": "",
+	});
+	cjs(".mod/", "main.js");
+	assert.throws(() => esm(".mod/", "main.js"));
 });
 
 await test("any url", () => {
