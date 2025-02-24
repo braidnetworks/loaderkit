@@ -1,5 +1,7 @@
 [![npm version](https://badgen.now.sh/npm/v/@loaderkit/ts)](https://www.npmjs.com/package/@loaderkit/ts)
 [![isc license](https://badgen.now.sh/npm/license/@loaderkit/ts)](https://github.com/braidnetworks/loaderkit/blob/main/LICENSE)
+[![github action](https://github.com/braidnetworks/loaderkit/actions/workflows/build.yaml/badge.svg)](https://github.com/braidnetworks/loaderkit/actions/workflows/build.yaml)
+[![npm downloads](https://badgen.now.sh/npm/dm/@loaderkit/ts)](https://www.npmjs.com/package/@loaderkit/ts)
 
 🐘 @loaderkit/ts - A nodejs loader for TypeScript
 =================================================

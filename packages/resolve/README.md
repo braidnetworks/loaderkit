@@ -1,5 +1,7 @@
 [![npm version](https://badgen.now.sh/npm/v/@loaderkit/resolve)](https://www.npmjs.com/package/@loaderkit/resolve)
 [![isc license](https://badgen.now.sh/npm/license/@loaderkit/resolve)](https://github.com/braidnetworks/loaderkit/blob/main/LICENSE)
+[![github action](https://github.com/braidnetworks/loaderkit/actions/workflows/build.yaml/badge.svg)](https://github.com/braidnetworks/loaderkit/actions/workflows/build.yaml)
+[![npm downloads](https://badgen.now.sh/npm/dm/@loaderkit/resolve)](https://www.npmjs.com/package/@loaderkit/resolve)
 
 🔎 @loaderkit/resolve - General purpose nodejs module resolver
 ==============================================================
