@@ -43,8 +43,7 @@ function *resolver(fs: FileSystemTask, fragment: string, parentURL: URL, context
 		parentURL = new URL("/", parentURL);
 	}
 
-	// 3. If X begins with './' or '/' or '../'
-	// nb: Specification is wrong! '.' is considered a relative path as well.
+	// 3. If X is equal to '.', or X begins with './', '/' or '../'
 	if (fragment === "." || fragment.startsWith("./") || fragment.startsWith("/") || fragment.startsWith("../")) {
 		// a. LOAD_AS_FILE(Y + X)
 		const asFile = yield* loadAsFile(fs, fragment, parentURL, extensions);

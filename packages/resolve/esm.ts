@@ -146,27 +146,20 @@ function *packageResolve(fs: FileSystemTask, packageSpecifier: string, parentURL
 	//    position at the length of packageName.
 	const packageSubpath = `.${packageSpecifier.substring(packageName.length)}`;
 
-	// 8. If packageSubpath ends in "/", then
-	if (packageSubpath.endsWith("/")) {
-		// 1. Throw an Invalid Module Specifier error.
-		throw new Error("Invalid Module Specifier");
-	}
-
-	// 9. Let selfUrl be the result of PACKAGE_SELF_RESOLVE(packageName, packageSubpath, parentURL).
+	// 8. Let selfUrl be the result of PACKAGE_SELF_RESOLVE(packageName, packageSubpath, parentURL).
 	const selfUrl = yield* packageSelfResolve(fs, packageName, packageSubpath, parentURL);
 
-	// 10. If selfUrl is not undefined, return selfUrl.
+	// 9. If selfUrl is not undefined, return selfUrl.
 	if (selfUrl !== undefined) {
 		return selfUrl;
 	}
 
-	// 11. While parentURL is not the file system root,
+	// 10. While parentURL is not the file system root,
 	const sentinel = new URL(`/node_modules/${packageName}/`, parentURL);
 	let packageURL;
 	do {
-		// 1. Let packageURL be the URL resolution of "node_modules/" concatenated with
-		//    packageSpecifier, relative to parentURL.
-		// nb: Specification error! It is `packageName`.
+		// 1. Let packageURL be the URL resolution of "node_modules/" concatenated with packageName,
+		//    relative to parentURL.
 		packageURL = new URL(`node_modules/${packageName}/`, parentURL);
 
 		// 2. Set parentURL to the parent folder URL of parentURL.
@@ -205,7 +198,7 @@ function *packageResolve(fs: FileSystemTask, packageSpecifier: string, parentURL
 		}
 	} while (packageURL.href !== sentinel.href);
 
-	// 12. Throw a Module Not Found error
+	// 11. Throw a Module Not Found error
 	throw new Error("Module Not Found");
 }
 
@@ -239,6 +232,7 @@ function *packageSelfResolve(fs: FileSystemTask, packageName: string, packageSub
 }
 
 // PACKAGE_EXPORTS_RESOLVE(packageURL, subpath, exports, conditions)
+// Note: This function is directly invoked by the CommonJS resolution algorithm.
 /** @internal */
 export function *packageExportsResolve(
 	fs: FileSystemTask,
@@ -306,6 +300,7 @@ export function *packageExportsResolve(
 }
 
 // PACKAGE_IMPORTS_RESOLVE(specifier, parentURL, conditions)
+// Note: This function is directly invoked by the CommonJS resolution algorithm.
 /** @internal */
 export function *packageImportsResolve(fs: FileSystemTask, specifier: string, parentURL: URL, conditions: readonly string[]): Task<URL> {
 	// 1. Assert: specifier begins with "#".
@@ -349,10 +344,14 @@ function *packageImportsExportsResolve(
 	isImports: boolean,
 	conditions: readonly string[],
 ): Task<URL | null | undefined> {
-	// 1. If matchKey is a key of matchObj and does not contain "*", then
-	// nb: `endsWith` check is not in the specification, but is present in the implementation.
-	//  https://github.com/nodejs/node/blob/579fc67d495daf76d1cb8f895d4ce79769dde5f3/lib/internal/modules/esm/resolve.js#L596
-	if (matchKey in matchObj && !matchKey.includes("*") && !matchKey.endsWith("/")) {
+	// 1. If matchKey ends in "/", then
+	if (matchKey.endsWith("/")) {
+		// 1. Throw an Invalid Module Specifier error.
+		throw new Error("Invalid Module Specifier");
+	}
+
+	// 2. If matchKey is a key of matchObj and does not contain "*", then
+	if (matchKey in matchObj && !matchKey.includes("*")) {
 		// 1. Let target be the value of matchObj[matchKey].
 		const target = matchObj[matchKey];
 
@@ -361,7 +360,7 @@ function *packageImportsExportsResolve(
 		return yield* packageTargetResolve(fs, packageURL, target, null, isImports, conditions);
 	}
 
-	// 2. Let expansionKeys be the list of keys of matchObj containing only a single "*", sorted by
+	// 3. Let expansionKeys be the list of keys of matchObj containing only a single "*", sorted by
 	//    the sorting function PATTERN_KEY_COMPARE which orders in descending order of specificity.
 	const expansionKeys = Object.keys(matchObj)
 		.filter(key => {
@@ -370,7 +369,7 @@ function *packageImportsExportsResolve(
 		})
 		.sort(patternKeyCompare);
 
-	// 3. For each key expansionKey in expansionKeys, do
+	// 4. For each key expansionKey in expansionKeys, do
 	for (const key of expansionKeys) {
 		// 1. Let patternBase be the substring of expansionKey up to but excluding the first "*"
 		//    character.
@@ -399,7 +398,7 @@ function *packageImportsExportsResolve(
 		}
 	}
 
-	// 4. Return null
+	// 5. Return null
 	return null;
 }
 
@@ -409,10 +408,12 @@ function patternKeyCompare(keyA: string, keyB: string) {
 	// 2. Assert: keyB ends with "/" or contains only a single "*".
 
 	// 3. Let baseLengthA be the index of "*" in keyA plus one, if keyA contains "*", or the length of keyA otherwise.
-	const baseLengthA = keyA.includes("*") ? keyA.indexOf("*") + 1 : keyA.length;
+	const indexOfStarA = keyA.indexOf("*");
+	const baseLengthA = indexOfStarA === -1 ? keyA.length : indexOfStarA + 1;
 
 	// 4. Let baseLengthB be the index of "*" in keyB plus one, if keyB contains "*", or the length of keyB otherwise.
-	const baseLengthB = keyB.includes("*") ? keyB.indexOf("*") + 1 : keyB.length;
+	const indexOfStarB = keyB.indexOf("*");
+	const baseLengthB = indexOfStarB === -1 ? keyB.length : indexOfStarB + 1;
 
 	// 5. If baseLengthA is greater than baseLengthB, return -1.
 	// 6. If baseLengthB is greater than baseLengthA, return 1.
@@ -422,12 +423,12 @@ function patternKeyCompare(keyA: string, keyB: string) {
 	}
 
 	// 7. If keyA does not contain "*", return 1.
-	if (!keyA.includes("*")) {
+	if (indexOfStarA === -1) {
 		return 1;
 	}
 
 	// 8. If keyB does not contain "*", return -1.
-	if (!keyB.includes("*")) {
+	if (baseLengthB === -1) {
 		return -1;
 	}
 
