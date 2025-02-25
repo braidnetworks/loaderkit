@@ -84,6 +84,49 @@ await test("commonjs accepts package name that esm does not", () => {
 	assert.throws(() => esm(".mod/", "main.js"));
 });
 
+await test("unspecified legacy directory imports", () => {
+	const { cjs, esm } = makeResolves({
+		"node_modules/mod/package.json": "{}",
+		"node_modules/mod/index.js": "",
+	});
+	cjs("mod", "main.js");
+	esm("mod", "main.js");
+});
+
+await test("unspecified legacy main imports", () => {
+	const packageJsons = [
+		JSON.stringify({ main: "index" }),
+		JSON.stringify({ type: "commonjs", main: "index" }),
+	];
+	for (const packageJson of packageJsons) {
+		const { cjs, esm } = makeResolves({
+			"node_modules/mod/package.json": packageJson,
+			"node_modules/mod/index.js": "",
+			"node_modules/mod/other.js": "",
+		});
+		cjs("mod", "main.js");
+		cjs("mod/other", "main.js");
+		esm("mod", "main.js");
+		esm("mod/other", "main.js");
+	}
+});
+
+await test("unspecified legacy main directory imports", () => {
+	const packageJsons = [
+		JSON.stringify({ main: "lib" }),
+		JSON.stringify({ main: "lib/" }),
+		JSON.stringify({ main: "./lib/" }),
+	];
+	for (const packageJson of packageJsons) {
+		const { cjs, esm } = makeResolves({
+			"node_modules/mod/package.json": packageJson,
+			"node_modules/mod/lib/index.js": "",
+		});
+		cjs("mod", "main.js");
+		esm("mod", "main.js");
+	}
+});
+
 await test("any url", () => {
 	const { esm } = makeResolves({});
 	assert.strictEqual(esm("https://example.com/", "main.js").url.href, "https://example.com/");

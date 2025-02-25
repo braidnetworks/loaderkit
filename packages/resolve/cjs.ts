@@ -9,7 +9,8 @@ import { nodeCoreModules } from "./node-modules.js";
 // https://nodejs.org/api/modules.html#all-together
 
 const defaultConditions = [ "node", "require" ];
-const defaultExtensions = [ ".js", ".json", ".node" ];
+/** @internal */
+export const defaultExtensions = [ ".js", ".json", ".node" ];
 
 interface ContextCJS {
 	conditions?: readonly string[];
@@ -100,7 +101,8 @@ function maybeDetectAndLoad(fs: FileSystemTask, file: URL) {
 
 // LOAD_AS_FILE(X)
 // X = parentURL + fragment
-function *loadAsFile(fs: FileSystemTask, fragment: string, parentURL: URL, extensions: readonly string[]): Task<Resolution | undefined> {
+/** @internal */
+export function *loadAsFile(fs: FileSystemTask, fragment: string, parentURL: URL, extensions: readonly string[]): Task<Resolution | undefined> {
 	const encodedFragment = encodeFragment(fragment);
 	// 1. If X is a file, load X as its file extension format. STOP
 	const asFile = new URL(encodedFragment, parentURL);
@@ -154,7 +156,8 @@ function *loadAsFile(fs: FileSystemTask, fragment: string, parentURL: URL, exten
 
 // LOAD_INDEX(X)
 // X = parentURL + fragment
-function *loadIndex(fs: FileSystemTask, fragment: string, parentURL: URL, extensions: readonly string[]): Task<Resolution | undefined> {
+/** @internal */
+export function *loadIndex(fs: FileSystemTask, fragment: string, parentURL: URL, extensions: readonly string[]): Task<Resolution | undefined> {
 	const encodedFragment = encodeFragment(fragment);
 	for (const extension of extensions) {
 		const withIndex = new URL(`${encodedFragment}/index${extension}`, parentURL);
@@ -197,7 +200,8 @@ function *loadIndex(fs: FileSystemTask, fragment: string, parentURL: URL, extens
 }
 
 // LOAD_AS_DIRECTORY(X)
-function *loadAsDirectory(fs: FileSystemTask, path: URL, extensions: readonly string[]): Task<Resolution | undefined> {
+/** @internal */
+export function *loadAsDirectory(fs: FileSystemTask, path: URL, extensions: readonly string[]): Task<Resolution | undefined> {
 	// 1. If X/package.json is a file,
 	//   a. Parse X/package.json, and look for "main" field.
 	const pjson = yield* readPackageJson(fs, path);

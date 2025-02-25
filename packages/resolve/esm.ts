@@ -2,6 +2,7 @@ import type { FileSystemAsync, FileSystemSync, FileSystemTask } from "./fs.js";
 import type { Task } from "@braidai/lang/task/utility";
 import { begin, expect, task } from "@braidai/lang/task/task";
 import { makeFileSystemAsyncAdapter, makeFileSystemSyncAdapter } from "./adapter.js";
+import { defaultExtensions, loadAsDirectory, loadAsFile, loadIndex } from "./cjs.js";
 import { nodeCoreModules } from "./node-modules.js";
 
 // https://nodejs.org/api/esm.html#resolution-and-loading-algorithm
@@ -188,14 +189,47 @@ function *packageResolve(fs: FileSystemTask, packageSpecifier: string, parentURL
 
 			// 1. If pjson.main is a string, then
 			if (typeof pjson?.main === "string") {
+				// nb: Unspecified legacy behavior
+				if (pjson.type !== "module") {
+					const directoryFragment = pjson.main.endsWith("/") ? pjson.main : `${pjson.main}/`;
+					if (yield* fs.directoryExists(new URL(directoryFragment, packageURL))) {
+						const legacyResolution = yield* loadAsDirectory(fs, new URL(directoryFragment, packageURL), defaultExtensions);
+						if (legacyResolution) {
+							return legacyResolution.url;
+						}
+					} else {
+						const legacyResolution = yield* loadAsFile(fs, pjson.main, packageURL, defaultExtensions);
+						if (legacyResolution) {
+							return legacyResolution.url;
+						}
+
+					}
+				}
 				// 1. Return the URL resolution of main in packageURL.
 				return new URL(pjson.main, packageURL);
+			}
+
+			// nb: Unspecified legacy behavior
+			if (pjson?.type !== "module") {
+				const legacyResolution = yield* loadIndex(fs, ".", packageURL, defaultExtensions);
+				if (legacyResolution) {
+					return legacyResolution.url;
+				}
 			}
 
 			// 2. Otherwise,
 			//   1. Return the URL resolution of packageSubpath in packageURL.
 			return new URL(packageSubpath, packageURL);
 		}
+
+		// nb: Unspecified legacy behavior
+		if (pjson?.type !== "module") {
+			const legacyResolution = yield* loadAsFile(fs, packageSubpath, packageURL, defaultExtensions);
+			if (legacyResolution) {
+				return legacyResolution.url;
+			}
+		}
+
 	} while (packageURL.href !== sentinel.href);
 
 	// 11. Throw a Module Not Found error
