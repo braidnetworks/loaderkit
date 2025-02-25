@@ -1,5 +1,19 @@
 # @loaderkit/ts
 
+## 2.1.0
+
+### Minor Changes
+
+- d9a0ecd: Basic `rootDirs` support
+
+### Patch Changes
+
+- Updated dependencies [27e5175]
+- Updated dependencies [09e29ed]
+- Updated dependencies [944c1a8]
+- Updated dependencies [d863663]
+  - @loaderkit/resolve@1.0.3
+
 ## 2.0.1
 
 ### Patch Changes
