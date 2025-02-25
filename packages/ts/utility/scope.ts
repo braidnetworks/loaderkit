@@ -100,11 +100,13 @@ function makeReadParseCachedForever<
 
 // Iterable which walks up the filesystem hierarchy from the given path.
 function *iterateDirectoryHierarchy(fileOrDirectory: URL) {
-	fileOrDirectory = new URL(".", fileOrDirectory);
-	yield fileOrDirectory;
-	while (fileOrDirectory.pathname !== "/") {
-		fileOrDirectory = new URL("..", fileOrDirectory);
+	if (fileOrDirectory.protocol !== "node:") {
+		fileOrDirectory = new URL(".", fileOrDirectory);
 		yield fileOrDirectory;
+		while (fileOrDirectory.pathname !== "/") {
+			fileOrDirectory = new URL("..", fileOrDirectory);
+			yield fileOrDirectory;
+		}
 	}
 }
 
