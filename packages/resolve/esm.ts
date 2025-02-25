@@ -119,14 +119,14 @@ function *packageResolve(fs: FileSystemTask, packageSpecifier: string, parentURL
 			// 5. Otherwise,
 			//   1. If packageSpecifier does not contain a "/" separator, then
 			let slash = packageSpecifier.indexOf("/");
-			slash = slash === -1 ? slash : packageSpecifier.indexOf("/", slash + 1);
 			if (slash === -1) {
 				// 1. Throw an Invalid Module Specifier error.
 				throw new Error("Invalid Module Specifier");
 			}
 			// 2. Set packageName to the substring of packageSpecifier until the second "/" separator or the
 			//    end of the string.
-			return packageSpecifier.slice(0, slash);
+			slash = packageSpecifier.indexOf("/", slash + 1);
+			return slash === -1 ? packageSpecifier : packageSpecifier.slice(0, slash);
 		} else {
 			// 4. If packageSpecifier does not start with "@", then
 			//   1. Set packageName to the substring of packageSpecifier until the first "/"

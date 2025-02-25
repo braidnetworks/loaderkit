@@ -245,16 +245,15 @@ function *loadNodeModules(fs: FileSystemTask, fragment: string, parentURL: URL, 
 	const nameAndSubpath = function() {
 		// 1. Try to interpret X as a combination of NAME and SUBPATH where the name
 		//    may have a @scope/ prefix and the subpath begins with a slash (`/`).
-		const matches = /^(?<name>(?:@[^/]+\/)?[^/]+)(?<subpath>\/.*)$/.exec(fragment);
+		const matches = /^(?<name>(?:@[^/]+\/)?[^@][^/]*)(?<subpath>.*)$/.exec(fragment);
 		if (matches === null) {
 			return;
 		}
 		return matches.groups as { name: string; subpath: string };
 	}();
-	// If `fragment` is a bare module specifier then the lifted instructions from
-	// `LOAD_PACKAGE_EXPORTS` dictate that `nameAndSubpath` is undefined. In that case `realname`
-	// below will be the fully resolved path to the module. Then, `subpathFragment` becomes "."
-	// which resolves to the module directory.
+	// If `fragment` doesn't match the pattern in `LOAD_PACKAGE_EXPORTS`, for example '@foo', then
+	// `nameAndSubpath` is undefined. In that case `realname` below will be the fully resolved path
+	// to the module. Then, `subpathFragment` becomes "." which resolves to the module directory.
 	const subpathFragment = nameAndSubpath ? `.${nameAndSubpath.subpath}` : ".";
 
 	const conditions = context?.conditions ?? defaultConditions;
