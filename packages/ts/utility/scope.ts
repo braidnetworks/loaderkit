@@ -35,6 +35,7 @@ interface EmitOptions {
 	outDir?: string;
 	resolveJsonModule?: boolean;
 	rootDir?: string | undefined;
+	rootDirs?: string[] | undefined;
 }
 
 /**
@@ -179,10 +180,15 @@ export function makeResolveTypeScriptPackage(fs: LoaderFileSystem) {
 			compilerOptions.outDir !== undefined
 				? makeLocation(compilerOptions.outDir, configPath)
 				: undefined;
-			const sourceBase =
-				compilerOptions.rootDir === undefined
-					? configPath
-					: makeLocation(compilerOptions.rootDir, configPath);
+			const sourceBase = function() {
+				if (compilerOptions.rootDirs) {
+					return makeLocation(compilerOptions.rootDirs[0]!, configPath);
+				} else if (compilerOptions.rootDir === undefined) {
+					return configPath;
+				} else {
+					return makeLocation(compilerOptions.rootDir, configPath);
+				}
+			}();
 			const locations: ResolutionConfig = {
 				outputBase,
 				sourceBase,
