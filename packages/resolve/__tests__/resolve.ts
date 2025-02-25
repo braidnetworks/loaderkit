@@ -137,8 +137,10 @@ await test("symlinked module", () => {
 		".pnpm/mod@1.0.0/node_modules/mod/package.json": JSON.stringify({ exports: "./index.js" }),
 		".pnpm/mod@1.0.0/node_modules/mod/index.js": "",
 		"node_modules/mod*": "../.pnpm/mod@1.0.0/node_modules/mod",
+		"node_modules/mod2*": "/.pnpm/mod@1.0.0/node_modules/mod",
 	});
 	assert.strictEqual(esm("mod", "main.js").url.href, "file:///.pnpm/mod@1.0.0/node_modules/mod/index.js");
+	assert.strictEqual(esm("mod2", "main.js").url.href, "file:///.pnpm/mod@1.0.0/node_modules/mod/index.js");
 });
 
 await test("symlinked file", () => {

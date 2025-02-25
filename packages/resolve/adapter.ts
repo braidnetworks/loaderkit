@@ -34,6 +34,8 @@ export function makeTestFileSystem(files: Record<string, string>): FileSystemSyn
 				const base = function() {
 					if (linked === "/") {
 						return new URL("/", dir);
+					} else if (linked.startsWith("/")) {
+						return new URL(`${linked}/`, dir);
 					} else if (linked.endsWith(".")) {
 						return new URL(`../${linked}`, dir);
 					} else {

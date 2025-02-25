@@ -174,10 +174,10 @@ function *packageResolve(fs: FileSystemTask, packageSpecifier: string, parentURL
 
 		// 4. Let pjson be the result of READ_PACKAGE_JSON(packageURL).
 		const pjson = yield* readPackageJson(fs, packageURL);
+		packageURL = yield* resolveDirectoryLinks(fs, packageURL);
 
 		// 5. If pjson is not null and pjson.exports is not null or undefined, then
 		if (pjson?.exports != null) {
-			packageURL = yield* resolveDirectoryLinks(fs, packageURL);
 			// 1. Return the result of PACKAGE_EXPORTS_RESOLVE(packageURL, packageSubpath, pjson.exports,
 			//    defaultConditions).
 			return yield* packageExportsResolve(fs, packageURL, packageSubpath, pjson.exports, defaultConditions);
@@ -811,7 +811,9 @@ export function *resolveDirectoryLinks(fs: FileSystemTask, path: URL): Task<URL>
 		if (link === undefined) {
 			return url;
 		} else if (link === "/") {
-			return yield* read(new URL("/", url));
+			return new URL("/", url);
+		} else if (link.startsWith("/")) {
+			return yield* read(new URL(`${link}/`, url));
 		} else if (link.endsWith("..")) {
 			// `readlink` will never return a trailing slash (except for a root link), but the URL
 			// constructor will insert a trailing slash given ".", "..", etc. So this branch does
