@@ -64,7 +64,7 @@ function *resolver(fs: FileSystemTask, specifier: string, parentURL: URL): Task<
 		// 7. If resolved is a "file:" URL, then
 		if (url.protocol === "file:") {
 			// 1. If resolved contains any percent encodings of "/" or "\" ("%2F" and "%5C" respectively), then
-			if (/%2F|%5C/.test(url.href)) {
+			if (/%2f|%5c/i.test(url.href)) {
 				// 1. Throw an Invalid Module Specifier error.
 				throw new Error("Invalid Module Specifier");
 			}

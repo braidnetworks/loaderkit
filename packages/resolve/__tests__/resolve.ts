@@ -175,3 +175,14 @@ await test("symlinked file format", () => {
 	assert.strictEqual(cjs("./cjs", "main.js").format, "commonjs");
 	assert.strictEqual(esm("./mjs", "main.js").format, "module");
 });
+
+await test("percent encoded is invalid", () => {
+	const { esm } = makeResolves({
+		"package.json": JSON.stringify({
+			exports: "main.mjs",
+		}),
+		"a/b/main.mjs": "",
+	});
+	assert.throws(() => esm("./a%2fmain.mjs", "main.mjs").format, "esm");
+	assert.throws(() => esm("./a%2Fmain.mjs", "main.mjs").format, "esm");
+});
