@@ -1,5 +1,11 @@
 # @loaderkit/resolve
 
+## 1.0.4
+
+### Patch Changes
+
+- 220b7f2: Restrict percent-encoded specifiers
+
 ## 1.0.3
 
 ### Patch Changes
