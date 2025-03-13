@@ -1,5 +1,13 @@
 # @loaderkit/ts
 
+## 2.1.1
+
+### Patch Changes
+
+- f4b4867: Fix resolution of certain ESM+CJS dual-published packages
+- Updated dependencies [220b7f2]
+  - @loaderkit/resolve@1.0.4
+
 ## 2.1.0
 
 ### Minor Changes
