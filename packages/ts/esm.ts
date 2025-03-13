@@ -104,9 +104,10 @@ export function makeResolveAndLoad(underlyingFileSystem: LoaderFileSystem) {
 
 	const makeResolver = (fileSystem: FileSystemAsync, packageJson: PackageJson | undefined, locations: ResolutionConfig | undefined) =>
 		async (specifier: string, parentURL: URL) => {
+			const parentFormat = resolveFormat(parentURL.pathname, packageJson);
 			if (locations?.outputBase) {
 				// Projects with outputs use a stricter resolution
-				if (packageJson?.type === "module") {
+				if (parentFormat === "module") {
 					return esmResolve(fileSystem, specifier, parentURL);
 				} else {
 					return cjsResolve(fileSystem, specifier, parentURL);
@@ -115,7 +116,7 @@ export function makeResolveAndLoad(underlyingFileSystem: LoaderFileSystem) {
 				// Projects without outputs fall back to CJS resolution with custom conditions &
 				// extensions. This simulates "bundler" like behavior.
 				return cjsResolve(fileSystem, specifier, parentURL, {
-					conditions: packageJson?.type === "module"
+					conditions: parentFormat === "module"
 						? commonJsImportConditions
 						: commonJsRequireConditions,
 					extensions: commonJsExtensions,
