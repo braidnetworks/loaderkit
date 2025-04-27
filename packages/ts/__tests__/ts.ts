@@ -238,3 +238,24 @@ await test("dual package release from cjs vs mjs", async () => {
 	assert.strictEqual(result2.url, "file:///node_modules/mod/dist/main.mjs");
 	assert.strictEqual(result2.format, "module");
 });
+
+await test("type-only imports w/ rootDirs", async () => {
+	const { evaluate } = makeTestLoader({
+		"package.json": JSON.stringify({ type: "module" }),
+		"tsconfig.json": JSON.stringify({
+			compilerOptions: {
+				rootDirs: [
+					"src",
+					"types",
+				],
+			},
+		}),
+		"src/main.ts":
+			`import type { Type } from './types.ts';
+			const value: Type = "hello world";
+			globalThis.value = value;`,
+		"types/types.ts": "export type Type = unknown;",
+	});
+	const result = await evaluate("src/main.ts");
+	assert.strictEqual(result.value, "hello world");
+});
